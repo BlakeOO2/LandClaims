@@ -1,0 +1,83 @@
+# LandClaims Configuration
+debug: true
+
+claiming:
+  tool: GOLDEN_SHOVEL
+  admin-tool: GOLDEN_AXE
+  default-blocks: 2000
+  blocks-per-hour: 500
+  max-blocks: 1000000
+  minimum-size: 100
+  max-claim-size: 1000000
+
+visualization:
+  corner-block: GOLD_BLOCK
+  border-block: REDSTONE_BLOCK
+  admin-corner-block: DIAMOND_BLOCK
+  spacing: 10
+  duration: 30
+  nearby-radius: 50
+
+server:
+  name: "Server"
+  admin-claim-prefix: "§4[Admin] "
+
+flags:
+  global:
+    PVP: true
+    MONSTERS: true
+    EXPLOSIONS: true
+    CREEPER_DAMAGE: true
+    FIRE_SPREAD: true
+    MOB_GRIEFING: true
+    LEAF_DECAY: true
+    VILLAGER_TRADING: true
+    REDSTONE: true
+    PISTONS: true
+    HOPPERS: true
+
+
+  worlds:
+    world:
+      allow-claiming: true
+    world_nether:
+      allow-claiming: false
+      EXPLOSIONS: true
+      FIRE_SPREAD: true
+    world_the_end:
+      allow-claiming: false
+
+messages:
+  show-claim-enter-exit: true  # Global toggle
+  claim-enter: "§6[LandClaims] You have entered %owner%'s claim"
+  claim-exit: "§6[LandClaims] You have left %owner%'s claim"
+  admin-claim-enter: "§6[LandClaims] You have entered an admin protected area"
+  admin-claim-exit: "§6[LandClaims] You have left an admin protected area"
+  global-protection-message: "§c[LandClaims] This action is not allowed in this world"
+
+
+database:
+  backup-interval: 12 # hours
+  cache-refresh-interval: 5 # minutes
+  max-retries: 3
+  connection-timeout: 30000
+  enable-async: true
+
+bluemap:
+  enabled: true
+  update-interval: 300  # seconds
+  markers:
+    normal-claims:
+      fill-color: "#00FF0033"
+      border-color: "#00FF00FF"
+    admin-claims:
+      fill-color: "#FF000033"
+      border-color: "#FF0000FF"
+    label:
+      show-owner: true
+      show-size: true
+      show-trusted: true
+
+
+
+

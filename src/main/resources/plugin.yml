@@ -1,0 +1,57 @@
+name: LandClaims
+version: 1.1.14.6
+main: org.example.Main
+api-version: 1.21
+softdepend: [BlueMap]
+commands:
+  landclaims:
+    description: Main command for land claims
+    aliases: [lc]
+    permission: landclaims.use
+permissions:
+  landclaims.use:
+    description: Allows use of basic land claims commands
+    default: true
+  landclaims.flight:
+    description: Allows players to fly within their own claims
+    default: false
+  landclaims.admin:
+    description: Allows access to admin commands
+    default: op
+  landclaims.admin.override:
+    description: Allows bypassing claim restrictions
+    default: op
+  landclaims.admin.reload:
+    description: Allows reloading the plugin configuration
+    default: op
+  landclaims.admin.unclaim:
+    description: Allows removing other players' claims
+    default: op
+  landclaims.admin.blocks:
+    description: Allows modifying players' claim blocks
+    default: op
+  landclaims.admin.bypass:
+    description: Allows bypassing claim restrictions
+    default: op
+  landclaims.admin.worldsettings:
+    description: Allows modifying world settings
+    default: op
+  landclaims.teleport:
+    description: Allows teleporting to claims
+    default: op
+  landclaims.signs.bypass:
+    description: Allows seeing sign interaction messages even when suppressed
+    default: false
+  landclaims.admin.cleanup:
+    description: Allows cleaning up duplicate claims
+    default: op
+  landclaims.admin.database:
+    description: Allows access to database management commands
+    default: op
+  landclaims.notifications:
+    description: Allows receiving claim entry/exit notifications
+    default: true
+  landclaims.adminland.fly:
+    description: Allows players to fly in admin claims
+    default: op
+
