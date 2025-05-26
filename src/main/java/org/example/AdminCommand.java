@@ -96,20 +96,10 @@ public class AdminCommand {
             // In AdminCommand.java
             case "bluemap":
                 if (args.length < 3) {
-                    sender.sendMessage("§cUsage: /lc admin bluemap <reload|toggle|status|enable|disable>");
+                    sender.sendMessage("§cUsage: /lc admin bluemap <reload|toggle|status>");
                     return true;
                 }
                 switch (args[2].toLowerCase()) {
-                    case "enable":
-                        plugin.getConfig().set("bluemap.enabled", true);
-                        plugin.saveConfig();
-                        if (plugin.getBlueMapIntegration() != null) {
-                            plugin.getBlueMapIntegration().reload();
-                        } else {
-                            plugin.setBlueMapIntegration(new BlueMapIntegration(plugin));
-                        }
-                        sender.sendMessage("§a[LandClaims] BlueMap integration enabled and reloaded.");
-                        return true;
                     case "reload":
                         if (plugin.getBlueMapIntegration() != null) {
                             sender.sendMessage("§6[LandClaims] Reloading BlueMap markers...");
@@ -119,34 +109,13 @@ public class AdminCommand {
                             sender.sendMessage("§c[LandClaims] BlueMap integration is not available.");
                         }
                         return true;
-                    case "toggle":
-                        if (plugin.getBlueMapIntegration() != null) {
-                            if (plugin.getBlueMapIntegration().isEnabled()) {
-                                plugin.getBlueMapIntegration().disable();
-                                plugin.getConfig().set("bluemap.enabled", false);
-                                sender.sendMessage("§a[LandClaims] BlueMap integration disabled.");
-                            } else {
-                                plugin.getConfig().set("bluemap.enabled", true);
-                                plugin.getBlueMapIntegration().reload();
-                                sender.sendMessage("§a[LandClaims] BlueMap integration enabled.");
-                            }
-                            plugin.saveConfig();
-                        } else {
-                            sender.sendMessage("§c[LandClaims] BlueMap plugin is not installed.");
-                        }
-                        return true;
                     case "status":
                         if (plugin.getBlueMapIntegration() != null) {
                             sender.sendMessage("§6=== BlueMap Integration Status ===");
                             sender.sendMessage("§7Enabled: §e" + plugin.getBlueMapIntegration().isEnabled());
                             sender.sendMessage("§7Config Enabled: §e" + plugin.getConfig().getBoolean("bluemap.enabled", true));
                             sender.sendMessage("§7Plugin Found: §e" + (Bukkit.getPluginManager().getPlugin("BlueMap") != null));
-                        } else {
-                            sender.sendMessage("§c[LandClaims] BlueMap integration is not available.");
                         }
-                        return true;
-                    default:
-                        sender.sendMessage("§cUnknown BlueMap command. Use: reload, toggle, status");
                         return true;
                 }
 

@@ -2,7 +2,7 @@ name: LandClaims
 version: 1.1.14.6
 main: org.example.Main
 api-version: 1.21
-softdepend: [BlueMap]
+softdepend: [BlueMap, ChestShop]
 commands:
   landclaims:
     description: Main command for land claims

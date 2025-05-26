@@ -1,14 +1,17 @@
 // ProtectionManager.java
 package org.example;
 
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Container;
 import org.bukkit.block.Sign;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Monster;
+import org.bukkit.plugin.Plugin;
 
 public class ProtectionManager {
     private final Main plugin;
@@ -65,60 +68,111 @@ public class ProtectionManager {
 
     private boolean isChestShopSign(Sign sign) {
         String[] lines = sign.getLines();
+        if (lines.length < 4) return false;
 
-        // First line should be a player name
-        if (lines[0] == null || lines[0].isEmpty()) return false;
+        // Line 2 should contain B or S followed by numbers
+        String priceLine = lines[1];
+        if (priceLine == null || priceLine.isEmpty()) return false;
 
-        // Second line should contain B or S followed by numbers
-        if (lines[1] != null) {
-            String line = lines[1].trim();
-            if (!line.startsWith("B") && !line.startsWith("S")) return false;
+        // Check for ChestShop price format
+        return priceLine.matches("^[BS]\\d+(?::[BS]\\d+)?$");
+    }
 
-            // Remove B and S and check if remaining characters are numbers
-            String priceStr = line.replaceAll("[BS:]", "");
-            try {
-                Double.parseDouble(priceStr);
-            } catch (NumberFormatException e) {
-                return false;
+    public boolean isChestShopContainer(Block block) {
+        // Check if ChestShop plugin is present
+        if (plugin.getServer().getPluginManager().getPlugin("ChestShop") == null) {
+            return false;
+        }
+
+        // Only check if it's a container
+        if (!(block.getState() instanceof Container)) {
+            return false;
+        }
+
+        // Check for attached shop signs
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+            Block relative = block.getRelative(face);
+            if (relative.getState() instanceof Sign) {
+                Sign sign = (Sign) relative.getState();
+                if (isChestShopSign(sign)) {
+                    return true;
+                }
             }
-        } else {
+        }
+
+        return false;
+    }
+
+    public boolean isPartOfChestShop(Block container) {
+        if (!(container.getState() instanceof Container)) {
             return false;
         }
 
-        // Third line should be a number
-        if (lines[2] == null || lines[2].isEmpty()) return false;
-        try {
-            Integer.parseInt(lines[2].trim());
-        } catch (NumberFormatException e) {
-            return false;
+        // Check all adjacent faces for shop signs
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+            Block relative = container.getRelative(face);
+            if (relative.getState() instanceof Sign) {
+                Sign sign = (Sign) relative.getState();
+                if (isChestShopSign(sign)) {
+                    return true;
+                }
+            }
         }
 
-        // Fourth line should be item name
-        return lines[3] != null && !lines[3].isEmpty();
+        return false;
+    }
+    private Sign findShopSign(Block container) {
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+            Block relative = container.getRelative(face);
+            if (relative.getState() instanceof Sign) {
+                Sign sign = (Sign) relative.getState();
+                if (isChestShopSign(sign)) {
+                    return sign;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isChestShopAdminBypass(Player player) {
+        // Check if player has the permission and if they're in bypass mode
+        if (player.hasPermission("chestshop.admin.chestbypass")) {
+            Plugin chestShop = plugin.getServer().getPluginManager().getPlugin("ChestShop");
+            if (chestShop != null) {
+                // Store bypass state in metadata
+                return player.hasMetadata("chestshop.bypass");
+            }
+        }
+        return false;
     }
 
     public boolean canInteract(Player player, Block block) {
-        // Check if it's a sign first
-        if (block.getState() instanceof Sign) {
-            Sign sign = (Sign) block.getState();
-            Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
+        // First check if it's a ChestShop container
+        if (isChestShopContainer(block)) {
+            // Find the shop sign
+            Sign shopSign = findShopSign(block);
+            if (shopSign != null) {
+                // Get the shop owner from the sign (first line)
+                String ownerName = ChatColor.stripColor(shopSign.getLine(0));
 
-            // If in a claim with sign messages suppressed and it's a chest shop sign
-            if (claim != null &&
-                    claim.getFlag(ClaimFlag.SUPPRESS_SIGN_MESSAGES) &&
-                    isChestShopSign(sign)) {
-                return true; // Allow interaction without message
+                // Only allow access if:
+                // 1. Player is the shop owner, or
+                // 2. Player has admin bypass permission AND is in bypass mode
+                boolean isOwner = player.getName().equals(ownerName);
+                boolean hasAdminBypass = player.hasPermission("chestshop.admin.chestbypass") &&
+                        hasChestShopBypass(player);
+
+                if (!isOwner && !hasAdminBypass) {
+                    player.sendMessage("§c[LandClaims] This container belongs to a ChestShop. Use the shop sign to trade.");
+                    return false;
+                }
+                return true;
             }
+            // If we found a shop container but no sign, deny access to be safe
+            return false;
         }
 
-        // Rest of your existing canInteract logic...
-        if (block.getType() == Material.ENDER_CHEST) {
-            return true;
-        }
-        if (block.getType() == Material.CRAFTING_TABLE) {
-            return true;
-        }
-
+        // Regular claim container checks...
         Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
         if (claim == null) return true;
 
@@ -161,6 +215,18 @@ public class ProtectionManager {
         return isTrusted ?
                 claim.getFlag(ClaimFlag.TRUSTED_CONTAINERS) :
                 claim.getFlag(ClaimFlag.UNTRUSTED_CONTAINERS);
+    }
+    private boolean hasChestShopBypass(Player player) {
+        try {
+            Plugin chestShop = plugin.getServer().getPluginManager().getPlugin("ChestShop");
+            if (chestShop != null) {
+                // Check for bypass metadata
+                return player.hasMetadata("chestshop.bypass");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Error checking ChestShop bypass: " + e.getMessage());
+        }
+        return false;
     }
 
     public boolean canTradeWithVillager(Player player, Location location) {

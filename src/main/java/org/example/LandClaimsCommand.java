@@ -88,11 +88,15 @@ public class LandClaimsCommand implements CommandExecutor {
                             player.sendMessage("§c[LandClaims] You are not standing in a claim.");
                             return true;
                         }
-                        plugin.getLogger().info("Showing claim visualization for " + player.getName() +
-                                " at " + claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
+                        plugin.getLogger().info("Found claim at location. Corners: " +
+                                claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ() + " to " +
+                                claim.getCorner2().getBlockX() + "," + claim.getCorner2().getBlockZ());
                         plugin.getClaimVisualizer().showClaim(player, claim);
+                        player.sendMessage("§a[LandClaims] Showing claim boundaries for " +
+                                plugin.getConfig().getInt("visualization.duration") + " seconds.");
                     }
                     return true;
+
                 case "flight":
                     if (!player.hasPermission("landclaims.flight")) {
                         player.sendMessage("§c[LandClaims] You don't have permission to use flight.");

@@ -15,6 +15,7 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class BlueMapIntegration {
     private final Main plugin;
@@ -78,14 +79,14 @@ public class BlueMapIntegration {
             // Get the webapp
             this.webapp = api.getWebApp();
             if (webapp == null) {
-                plugin.getLogger().warning("[BlueMap] Failed to get WebApp instance");
+                plugin.getLogger().severe("[BlueMap] Failed to get WebApp instance!");
                 return;
             }
             plugin.getLogger().info("[BlueMap] WebApp acquired successfully");
 
             // Get available maps
             if (api.getMaps().isEmpty()) {
-                plugin.getLogger().warning("[BlueMap] No maps found in BlueMap!");
+                plugin.getLogger().severe("[BlueMap] No maps found in BlueMap!");
                 return;
             }
 
@@ -125,6 +126,7 @@ public class BlueMapIntegration {
 
 
     // In BlueMapIntegration.java
+
     public void reload() {
         plugin.getLogger().info("[BlueMap] Reloading BlueMap integration...");
 
@@ -147,6 +149,7 @@ public class BlueMapIntegration {
     }
 
 
+
     private void startUpdateTask() {
         if (updateTask != null) {
             updateTask.cancel();
@@ -162,11 +165,11 @@ public class BlueMapIntegration {
 
     public void updateAllClaims() {
         if (!enabled || blueMap == null || markerSet == null || map == null) {
-            plugin.getLogger().warning("[LandClaims][BlueMap] Cannot update claims - integration not properly initialized");
-            plugin.getLogger().warning("[LandClaims][BlueMap] Enabled: " + enabled);
-            plugin.getLogger().warning("[LandClaims][BlueMap] API: " + (blueMap != null));
-            plugin.getLogger().warning("[LandClaims][BlueMap] MarkerSet: " + (markerSet != null));
-            plugin.getLogger().warning("[LandClaims][BlueMap] Map: " + (map != null));
+            plugin.getLogger().warning("[BlueMap] Cannot update claims - integration not properly initialized");
+            plugin.getLogger().warning("[BlueMap] Enabled: " + enabled);
+            plugin.getLogger().warning("[BlueMap] API: " + (blueMap != null));
+            plugin.getLogger().warning("[BlueMap] MarkerSet: " + (markerSet != null));
+            plugin.getLogger().warning("[BlueMap] Map: " + (map != null));
             return;
         }
 
@@ -176,7 +179,10 @@ public class BlueMapIntegration {
             int count = 0;
 
             // Add markers for all claims
-            for (Claim claim : plugin.getClaimManager().getAllClaims()) {
+            Set<Claim> claims = plugin.getClaimManager().getAllClaims();
+            plugin.getLogger().info("[BlueMap] Found " + claims.size() + " claims to display");
+
+            for (Claim claim : claims) {
                 addClaimMarker(claim);
                 count++;
             }
@@ -202,46 +208,41 @@ public class BlueMapIntegration {
         if (!enabled || blueMap == null || markerSet == null || map == null) return;
 
         try {
-            // Get claim corners
             Location corner1 = claim.getCorner1();
             Location corner2 = claim.getCorner2();
 
             String markerId = "claim_" + claim.getOwner().toString() + "_" +
                     corner1.getBlockX() + "_" + corner1.getBlockZ();
 
-            // Create shape - using float values
+            plugin.getLogger().info("[BlueMap] Adding marker for claim at " +
+                    corner1.getBlockX() + "," + corner1.getBlockZ());
+
+            // Create shape
             Shape shape = Shape.createRect(
                     (float)corner1.getBlockX(), (float)corner1.getBlockZ(),
                     (float)corner2.getBlockX(), (float)corner2.getBlockZ()
             );
 
-            // Create marker with both fill and line colors
+            // Get colors from config
+            Color fillColor = claim.isAdminClaim() ? adminFillColor : normalFillColor;
+            Color borderColor = claim.isAdminClaim() ? adminBorderColor : normalBorderColor;
+
+            // Create marker
             ShapeMarker marker = ShapeMarker.builder()
                     .label(showOwner ? Bukkit.getOfflinePlayer(claim.getOwner()).getName() + "'s Claim" : "")
                     .shape(shape, 0.0f)
-                    .fillColor(claim.isAdminClaim() ? adminFillColor : normalFillColor)  // Fill color for the area
-                    .lineColor(claim.isAdminClaim() ? adminBorderColor : normalBorderColor)  // Color for the border
-                    .lineWidth(2)  // Width of the border line
-                    .depthTestEnabled(true)  // Make it visible through terrain
+                    .fillColor(fillColor)
+                    .lineColor(borderColor)
+                    .lineWidth(2)
+                    .depthTestEnabled(true)
                     .build();
-
-            // Add detail popup
-            StringBuilder detail = new StringBuilder();
-            if (showSize) {
-                detail.append("Size: ").append(claim.getSize()).append(" blocks\n");
-            }
-            if (showTrusted) {
-                detail.append("Trusted Players: ").append(claim.getTrustedPlayers().size());
-            }
-            marker.setDetail(detail.toString());
 
             // Add marker to set
             markerSet.getMarkers().put(markerId, marker);
 
         } catch (Exception e) {
-            if (plugin.getConfig().getBoolean("debug", false)) {
-                plugin.getLogger().warning("Error adding claim marker: " + e.getMessage());
-            }
+            plugin.getLogger().warning("[BlueMap] Error adding claim marker: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

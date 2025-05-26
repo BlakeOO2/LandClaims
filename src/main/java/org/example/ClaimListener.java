@@ -3,13 +3,16 @@ package org.example;
 // ClaimListener.java
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.Sign;
 import org.bukkit.entity.*;
 import org.bukkit.entity.minecart.ExplosiveMinecart;
 import org.bukkit.event.Listener;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -23,6 +26,8 @@ import org.bukkit.block.Block;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.EventPriority;
 import org.bukkit.block.data.type.WallSign;
+import org.bukkit.entity.Projectile;
+import org.bukkit.projectiles.ProjectileSource;
 
 
 import org.bukkit.block.data.type.WallSign;
@@ -33,11 +38,11 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.event.entity.PotionSplashEvent;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 public class ClaimListener implements Listener {
     private final Main plugin;
@@ -435,50 +440,185 @@ public class ClaimListener implements Listener {
     }
 
 
-    @EventHandler(priority = EventPriority.HIGH)
+    @EventHandler(priority = EventPriority.LOWEST) // Change to LOWEST to run before other plugins
     public void onPlayerInteractBlock(PlayerInteractEvent event) {
         if (event.getClickedBlock() == null || event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
-
-        // Skip if using claiming tool
-        if (event.getPlayer().getInventory().getItemInMainHand().getType() == Material.GOLDEN_SHOVEL) {
-            return;
-        }
 
         Player player = event.getPlayer();
         Block block = event.getClickedBlock();
 
+        // Check if it's a ChestShop container first
+        if (plugin.getProtectionManager().isChestShopContainer(block)) {
+            // If player can't interact with the shop container, cancel the event
+            if (!plugin.getProtectionManager().canInteract(player, block)) {
+                event.setCancelled(true);
+                return;
+            }
+            // If they can interact (they're the owner or admin), let the event continue
+            return;
+        }
+
+        // Handle regular claim protection
         if (!plugin.getProtectionManager().canInteract(player, block)) {
             event.setCancelled(true);
             player.sendMessage("§c[LandClaims] You don't have permission to interact with this block.");
         }
     }
+    private boolean isShopSignInteraction(Block block, Player player) {
+        // Check if the player is clicking a sign
+        if (!(block.getState() instanceof Sign)) {
+            return false;
+        }
+
+        Sign sign = (Sign) block.getState();
+        String[] lines = sign.getLines();
+
+        // Check if it's a valid shop sign
+        if (lines.length < 4) {
+            return false;
+        }
+
+        // Check if the second line contains B or S with numbers (ChestShop format)
+        String priceLine = lines[1];
+        return priceLine != null && priceLine.matches("^[BS]\\d+(?::[BS]\\d+)?$");
+    }
 
 
 
 
-    @EventHandler(priority = org.bukkit.event.EventPriority.HIGH)
+
+
+    @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDamageByEntity(org.bukkit.event.entity.EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player) || !(event.getDamager() instanceof Player)) {
+        if (!(event.getEntity() instanceof Player)) {
             return;
         }
 
-        Player attacker = (Player) event.getDamager();
         Player victim = (Player) event.getEntity();
+        Player attacker = null;
 
-        Claim claim = plugin.getClaimManager().getClaimAt(victim.getLocation());
-        if (claim != null) {
-            if (!plugin.getProtectionManager().canPvP(attacker, victim)) {
-                event.setCancelled(true);
-                attacker.sendMessage("§c[LandClaims] PvP is disabled in this claim.");
+        // Check for projectile damage (bows, crossbows, tridents, etc.)
+        if (event.getDamager() instanceof Projectile) {
+            Projectile projectile = (Projectile) event.getDamager();
+            if (projectile.getShooter() instanceof Player) {
+                attacker = (Player) projectile.getShooter();
             }
-        } else {
-            // Check world settings instead
-            if (!plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.PVP)) {
-                event.setCancelled(true);
-                attacker.sendMessage("§c[LandClaims] PvP is disabled in this world.");
+        }
+        // Direct player damage
+        else if (event.getDamager() instanceof Player) {
+            attacker = (Player) event.getDamager();
+        }
+
+        // If we found an attacker (either direct or through projectile)
+        if (attacker != null) {
+            Claim claim = plugin.getClaimManager().getClaimAt(victim.getLocation());
+            if (claim != null) {
+                if (!claim.getFlag(ClaimFlag.PVP)) {
+                    event.setCancelled(true);
+                    attacker.sendMessage("§c[LandClaims] PvP is disabled in this claim.");
+                    return;
+                }
+            } else {
+                // Check world settings for unclaimed areas
+                if (!plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.PVP)) {
+                    event.setCancelled(true);
+                    attacker.sendMessage("§c[LandClaims] PvP is disabled in this area.");
+                    return;
+                }
             }
         }
     }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onContainerAccess(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) {
+            return;
+        }
+
+        Block block = event.getClickedBlock();
+        if (!(block.getState() instanceof Container)) {
+            return;
+        }
+
+        Player player = event.getPlayer();
+
+        // Check if it's a ChestShop container
+        if (plugin.getProtectionManager().isChestShopContainer(block)) {
+            // Find the shop sign
+            Sign shopSign = findAttachedShopSign(block);
+            if (shopSign != null) {
+                String ownerName = ChatColor.stripColor(shopSign.getLine(0));
+                // Only allow access if player is the owner or has admin bypass
+                if (!player.getName().equals(ownerName)) {
+                    event.setCancelled(true);
+                    player.sendMessage("§c[LandClaims] This container belongs to a ChestShop. Use the shop sign to trade.");
+                    return;
+                }
+            }
+        }
+    }
+
+    private Sign findAttachedShopSign(Block container) {
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+            Block relative = container.getRelative(face);
+            if (relative.getState() instanceof Sign) {
+                Sign sign = (Sign) relative.getState();
+                if (isChestShopSign(sign)) {
+                    return sign;
+                }
+            }
+        }
+        return null;
+    }
+
+
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPotionSplash(PotionSplashEvent event) {
+        if (!(event.getEntity().getShooter() instanceof Player)) {
+            return;
+        }
+
+        Player attacker = (Player) event.getEntity().getShooter();
+        boolean isPvPPotion = false;
+
+        // Check if the potion has harmful effects
+        for (PotionEffect effect : event.getPotion().getEffects()) {
+            if (isHarmfulEffect(effect.getType())) {
+                isPvPPotion = true;
+                break;
+            }
+        }
+
+        if (isPvPPotion) {
+            for (LivingEntity entity : event.getAffectedEntities()) {
+                if (entity instanceof Player && entity != attacker) {
+                    Player victim = (Player) entity;
+                    Claim claim = plugin.getClaimManager().getClaimAt(victim.getLocation());
+
+                    if (claim != null && !claim.getFlag(ClaimFlag.PVP)) {
+                        event.setIntensity(entity, 0);
+                        attacker.sendMessage("§c[LandClaims] PvP is disabled in this claim.");
+                    } else if (claim == null && !plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.PVP)) {
+                        event.setIntensity(entity, 0);
+                        attacker.sendMessage("§c[LandClaims] PvP is disabled in this area.");
+                    }
+                }
+            }
+        }
+    }
+
+
+    private boolean isHarmfulEffect(PotionEffectType type) {
+        return Arrays.asList(
+                PotionEffectType.NAUSEA,
+                PotionEffectType.POISON,
+                PotionEffectType.WEAKNESS,
+                PotionEffectType.SLOWNESS,
+                PotionEffectType.BLINDNESS,
+                PotionEffectType.WITHER
+        ).contains(type);
+    }
+
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onEntityExplode(org.bukkit.event.entity.EntityExplodeEvent event) {
