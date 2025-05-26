@@ -162,14 +162,19 @@ public class AdminCommand {
     // In AdminCommand.java
     private boolean handleDatabaseCommand(CommandSender sender, String[] args) {
         if (args.length < 3) {
-            sendDatabaseHelp(sender);
+            sender.sendMessage("§cUsage: /lc admin database <import|verify|status|repair>");
             return true;
         }
 
         switch (args[2].toLowerCase()) {
             case "import":
-                sender.sendMessage("§6Starting data import from YAML to database...");
+                sender.sendMessage("§6[LandClaims] Starting YAML to database import...");
                 plugin.getDatabaseManager().importFromYaml();
+                return true;
+
+            case "repair":
+                sender.sendMessage("§6[LandClaims] Attempting database repair...");
+                plugin.getDatabaseManager().handleCorruptDatabase();
                 return true;
 
             case "verify":
@@ -182,11 +187,35 @@ public class AdminCommand {
                     return true;
                 }
                 sender.sendMessage("§6[LandClaims] Starting duplicate claim cleanup...");
+
+                // Run async to prevent server lag
                 Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                    plugin.getDatabaseManager().removeDuplicateClaims();
-                    plugin.getClaimManager().refreshCache();
-                    Bukkit.getScheduler().runTask(plugin, () ->
-                            sender.sendMessage("§a[LandClaims] Duplicate claim cleanup completed."));
+                    try {
+                        // Get current claim count
+                        int beforeCount = plugin.getDatabaseManager().loadAllClaims().size();
+
+                        // Remove duplicates
+                        plugin.getDatabaseManager().removeDuplicateClaims();
+
+                        // Get new claim count
+                        int afterCount = plugin.getDatabaseManager().loadAllClaims().size();
+
+                        // Refresh cache
+                        plugin.getClaimManager().refreshCache();
+
+                        // Send completion message
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            sender.sendMessage("§a[LandClaims] Duplicate claim cleanup completed.");
+                            sender.sendMessage("§7Claims before: §e" + beforeCount);
+                            sender.sendMessage("§7Claims after: §e" + afterCount);
+                            sender.sendMessage("§7Removed: §e" + (beforeCount - afterCount) + " duplicate claims");
+                        });
+                    } catch (Exception e) {
+                        plugin.getLogger().severe("Error during duplicate cleanup: " + e.getMessage());
+                        e.printStackTrace();
+                        Bukkit.getScheduler().runTask(plugin, () ->
+                                sender.sendMessage("§c[LandClaims] Error during cleanup. Check console for details."));
+                    }
                 });
                 return true;
 
@@ -231,6 +260,7 @@ public class AdminCommand {
         sender.sendMessage("§f/lc admin database backup §7- Create a database backup");
         sender.sendMessage("§f/lc admin database listbackups §7- List all database backups");
         sender.sendMessage("§f/lc admin database status §7- Show database statistics");
+        sender.sendMessage("§f/lc admin database repair §7- Attempt to repair corrupted database");
         sender.sendMessage("§7Note: These commands may take time with large databases");
     }
 

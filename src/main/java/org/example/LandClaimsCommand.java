@@ -76,14 +76,20 @@ public class LandClaimsCommand implements CommandExecutor {
                 case "untrust":
                     return plugin.getTrustCommand().handleUntrust(player, args);
                 case "show":
+                    plugin.getLogger().info("Show command received from " + player.getName());
                     if (args.length > 1 && args[1].equalsIgnoreCase("nearby")) {
+                        plugin.getLogger().info("Showing nearby claims for " + player.getName());
                         plugin.getClaimVisualizer().showNearbyClaimBoundaries(player);
                     } else {
+                        plugin.getLogger().info("Checking claim at location: " + player.getLocation());
                         Claim claim = plugin.getClaimManager().getClaimAt(player.getLocation());
                         if (claim == null) {
+                            plugin.getLogger().info("No claim found at location for " + player.getName());
                             player.sendMessage("§c[LandClaims] You are not standing in a claim.");
                             return true;
                         }
+                        plugin.getLogger().info("Showing claim visualization for " + player.getName() +
+                                " at " + claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
                         plugin.getClaimVisualizer().showClaim(player, claim);
                     }
                     return true;

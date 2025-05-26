@@ -15,7 +15,8 @@ import java.util.logging.Level;
 
 public class DatabaseManager {
     private final Main plugin;
-    private Connection connection;
+    private volatile Connection connection;
+    private final Object connectionLock = new Object();
     private final String dbPath;
     private final PreparedStatement[] cachedStatements = new PreparedStatement[10];
 
@@ -88,55 +89,7 @@ public class DatabaseManager {
         }
     }
 
-    public void handleCorruptDatabase() {
-        plugin.getLogger().severe("Database corruption detected! Attempting recovery...");
 
-        // Create backup of corrupted database
-        File dbFile = new File(dbPath);
-        if (dbFile.exists()) {
-            try {
-                File backupFile = new File(dbPath + ".corrupted." +
-                        new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()));
-                java.nio.file.Files.copy(dbFile.toPath(), backupFile.toPath());
-                plugin.getLogger().info("Created backup of corrupted database: " + backupFile.getName());
-            } catch (IOException e) {
-                plugin.getLogger().severe("Failed to backup corrupted database: " + e.getMessage());
-            }
-        }
-
-        // Close current connection
-        try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().warning("Error closing corrupted database connection: " + e.getMessage());
-        }
-
-        // Delete corrupted database
-        if (dbFile.exists() && dbFile.delete()) {
-            plugin.getLogger().info("Removed corrupted database file");
-        }
-
-        // Reinitialize database
-        try {
-            initializeDatabase();
-            plugin.getLogger().info("Database reinitialized successfully");
-
-            // Import from YAML backup if available
-            List<Claim> yamlClaims = plugin.getDataManager().loadAllClaims();
-            if (!yamlClaims.isEmpty()) {
-                plugin.getLogger().info("Found " + yamlClaims.size() + " claims in YAML backup, importing...");
-                for (Claim claim : yamlClaims) {
-                    saveClaim(claim);
-                }
-                plugin.getLogger().info("Successfully imported claims from YAML backup");
-            }
-        } catch (Exception e) {
-            plugin.getLogger().severe("Failed to recover from database corruption: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
 
 
 
@@ -183,35 +136,35 @@ public class DatabaseManager {
         try {
             connection.setAutoCommit(false);
 
+            // Load existing claims from database for duplicate checking
+            Set<String> existingSignatures = new HashSet<>();
+            List<Claim> existingClaims = loadAllClaims();
+            for (Claim claim : existingClaims) {
+                existingSignatures.add(createClaimSignature(claim));
+            }
+
+            // Load claims from YAML
             List<Claim> yamlClaims = plugin.getDataManager().loadAllClaims();
-            Set<String> processedSignatures = new HashSet<>();
             int imported = 0;
             int skipped = 0;
 
             for (Claim claim : yamlClaims) {
                 String signature = createClaimSignature(claim);
 
-                // Check if this exact claim already exists
-                if (processedSignatures.contains(signature) || claimExists(claim)) {
+                // Skip if claim already exists
+                if (existingSignatures.contains(signature)) {
                     skipped++;
                     continue;
                 }
 
-                // Verify claim ownership
-                if (!isValidClaim(claim)) {
-                    plugin.getLogger().warning("Skipping invalid claim for owner: " + claim.getOwner());
-                    skipped++;
-                    continue;
-                }
-
+                // Save to database
                 saveClaim(claim);
-                processedSignatures.add(signature);
                 imported++;
             }
 
             connection.commit();
             plugin.getLogger().info("Import completed: " + imported + " claims imported, " +
-                    skipped + " duplicates/invalid claims skipped");
+                    skipped + " duplicates skipped");
 
         } catch (SQLException e) {
             try {
@@ -229,6 +182,8 @@ public class DatabaseManager {
             }
         }
     }
+
+
 
     private boolean isValidClaim(Claim claim) {
         // Check if owner exists
@@ -302,17 +257,16 @@ public class DatabaseManager {
 
 
     private String createClaimSignature(Claim claim) {
-        // Create a unique signature for a claim based on its properties
-        return String.format("%s_%d_%d_%d_%d_%d_%d_%s",
+        return String.format("%s_%s_%d_%d_%d_%d",
+                claim.getOwner().toString(),
                 claim.getWorld(),
                 claim.getCorner1().getBlockX(),
-                claim.getCorner1().getBlockY(),
                 claim.getCorner1().getBlockZ(),
                 claim.getCorner2().getBlockX(),
-                claim.getCorner2().getBlockY(),
-                claim.getCorner2().getBlockZ(),
-                claim.getOwner().toString());
+                claim.getCorner2().getBlockZ()
+        );
     }
+
 
     public void saveClaim(Claim claim) {
         try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
@@ -493,32 +447,7 @@ public class DatabaseManager {
             }
         }
     }
-    // In DatabaseManager.java
-    // In DatabaseManager.java
-    private Connection getConnection() throws SQLException {
-        try {
-            if (connection == null || connection.isClosed()) {
-                connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
 
-                // Test connection
-                try (Statement stmt = connection.createStatement()) {
-                    stmt.executeQuery("SELECT 1");
-                } catch (SQLException e) {
-                    if (e.getMessage().contains("malformed")) {
-                        handleCorruptDatabase();
-                        // Retry connection after recovery
-                        connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-                    } else {
-                        throw e;
-                    }
-                }
-            }
-            return connection;
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Database error: " + e.getMessage());
-            throw e;
-        }
-    }
 
 
 
@@ -640,6 +569,73 @@ public class DatabaseManager {
             plugin.getLogger().severe("Database verification failed: " + e.getMessage());
         }
     }
+
+    private Connection getConnection() throws SQLException {
+        synchronized (connectionLock) {
+            if (connection == null || connection.isClosed()) {
+                try {
+                    connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+                    connection.setAutoCommit(false);
+
+                    // Test connection
+                    try (Statement stmt = connection.createStatement()) {
+                        stmt.executeQuery("SELECT 1");
+                        connection.commit();
+                    } catch (SQLException e) {
+                        if (e.getMessage().contains("malformed")) {
+                            handleCorruptDatabase();
+                            // Retry connection after recovery
+                            connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+                            connection.setAutoCommit(false);
+                        } else {
+                            throw e;
+                        }
+                    }
+                } catch (SQLException e) {
+                    plugin.getLogger().severe("Failed to establish database connection: " + e.getMessage());
+                    throw e;
+                }
+            }
+            return connection;
+        }
+    }
+
+    public void handleCorruptDatabase() {
+        plugin.getLogger().severe("Database corruption detected! Attempting recovery...");
+
+        synchronized (connectionLock) {
+            try {
+                // Close current connection if open
+                if (connection != null && !connection.isClosed()) {
+                    connection.close();
+                }
+
+                // Backup corrupted database
+                File dbFile = new File(dbPath);
+                if (dbFile.exists()) {
+                    File backupFile = new File(dbPath + ".corrupted." +
+                            new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()));
+                    java.nio.file.Files.copy(dbFile.toPath(), backupFile.toPath());
+                    plugin.getLogger().info("Created backup of corrupted database: " + backupFile.getName());
+
+                    // Delete corrupted file
+                    if (dbFile.delete()) {
+                        plugin.getLogger().info("Removed corrupted database file");
+                    }
+                }
+
+                // Reinitialize database
+                initializeDatabase();
+                plugin.getLogger().info("Database reinitialized successfully");
+
+            } catch (Exception e) {
+                plugin.getLogger().severe("Failed to recover from database corruption: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+
 
     private void rebuildDatabase() {
         try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
@@ -936,13 +932,16 @@ public class DatabaseManager {
     }
 
     public void close() {
-        try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
+        synchronized (connectionLock) {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException e) {
+                    plugin.getLogger().warning("Error closing database connection: " + e.getMessage());
+                } finally {
+                    connection = null;
+                }
             }
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Error closing database connection: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 }

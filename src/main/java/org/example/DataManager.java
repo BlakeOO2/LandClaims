@@ -20,7 +20,20 @@ public class DataManager {
     public DataManager(Main plugin) {
         this.plugin = plugin;
         this.dataFile = new File(plugin.getDataFolder(), "data.yml");
-        loadData();
+        // Only create empty data file if it doesn't exist
+        if (!dataFile.exists()) {
+            try {
+                dataFile.getParentFile().mkdirs();
+                dataFile.createNewFile();
+                data = YamlConfiguration.loadConfiguration(dataFile);
+                data.createSection("claims");
+                saveData();
+            } catch (IOException e) {
+                plugin.getLogger().severe("Could not create data.yml");
+                e.printStackTrace();
+            }
+        }
+        data = YamlConfiguration.loadConfiguration(dataFile);
     }
 
     private void loadData() {

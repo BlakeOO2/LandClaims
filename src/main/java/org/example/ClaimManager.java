@@ -40,6 +40,8 @@ public class ClaimManager {
         loadClaims();
         startCacheRefreshTask();
     }
+
+
 //    private void rebuildDatabase() {
 //        try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
 //            Connection conn = transaction.getConnection();
@@ -66,36 +68,69 @@ public class ClaimManager {
 //            plugin.getLogger().severe("Failed to rebuild database: " + e.getMessage());
 //        }
 //    } //might not need this, no usage and has several errors
+private void startCacheRefreshTask() {
+    long refreshInterval = plugin.getConfig().getLong("database.cache-refresh-interval", 5) * 1200L; // Convert minutes to ticks (20 ticks per second * 60 seconds)
 
+    Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
+        plugin.getLogger().info("Refreshing claim cache...");
+        try {
+            refreshCache();
+            plugin.getLogger().info("Claim cache refresh complete");
+        } catch (Exception e) {
+            plugin.getLogger().severe("Error refreshing claim cache: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }, refreshInterval, refreshInterval);
+}
+
+    public void refreshCache() {
+        // Create temporary maps to avoid concurrent modification
+        Map<UUID, Set<Claim>> newPlayerClaims = new HashMap<>();
+        Map<String, Set<Claim>> newWorldClaims = new HashMap<>();
+
+        // Load claims from database
+        List<Claim> claims = plugin.getDatabaseManager().loadAllClaims();
+
+        // Populate temporary maps
+        for (Claim claim : claims) {
+            // Add to player claims
+            newPlayerClaims
+                    .computeIfAbsent(claim.getOwner(), k -> new HashSet<>())
+                    .add(claim);
+
+            // Add to world claims
+            newWorldClaims
+                    .computeIfAbsent(claim.getWorld(), k -> new HashSet<>())
+                    .add(claim);
+        }
+
+        // Synchronize the update of the main maps
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            playerClaims.clear();
+            worldClaims.clear();
+            playerClaims.putAll(newPlayerClaims);
+            worldClaims.putAll(newWorldClaims);
+        });
+    }
 
     public void loadClaims() {
+        loadClaimsFromDatabase(); // Just call the database-only method
+    }
+
+    public void loadClaimsFromDatabase() {
         if (loaded) {
             plugin.getLogger().warning("Attempted to load claims when already loaded!");
             return;
         }
 
-        plugin.getLogger().info("Loading claims...");
+        plugin.getLogger().info("Loading claims from database...");
 
         // Clear existing cache
         playerClaims.clear();
         worldClaims.clear();
 
-        // Try loading from database first
+        // Load from database only
         List<Claim> claims = plugin.getDatabaseManager().loadAllClaims();
-
-        // If database is empty, try loading from data.yml
-        if (claims.isEmpty()) {
-            plugin.getLogger().info("No claims found in database, checking data.yml...");
-            claims = plugin.getDataManager().loadAllClaims();
-
-            // If claims were found in data.yml, save them to database
-            if (!claims.isEmpty()) {
-                plugin.getLogger().info("Found claims in data.yml, migrating to database...");
-                for (Claim claim : claims) {
-                    plugin.getDatabaseManager().saveClaim(claim);
-                }
-            }
-        }
 
         // Add claims to cache
         int count = 0;
@@ -105,8 +140,9 @@ public class ClaimManager {
         }
 
         loaded = true;
-        plugin.getLogger().info("Loaded " + count + " claims");
+        plugin.getLogger().info("Loaded " + count + " claims from database");
     }
+
 
     private void addClaimToCache(Claim claim) {
         // Add to player claims cache
@@ -135,24 +171,17 @@ public class ClaimManager {
             }
         }
     }
-    public void refreshCache() {
-        playerClaims.clear();
-        worldClaims.clear();
 
-        List<Claim> claims = plugin.getDatabaseManager().loadAllClaims();
-        for (Claim claim : claims) {
-            addClaimToCache(claim);
-        }
-    }
 
     // Add periodic cache refresh
-    private void startCacheRefreshTask() {
-        Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
-            refreshCache();
-        }, 6000L, 6000L); // Refresh every 5 minutes
-    }
-
     public void addClaim(Claim claim) {
+        // Check for duplicates before adding
+        if (plugin.getDatabaseManager().isDuplicateClaim(claim)) {
+            plugin.getLogger().warning("Attempted to add duplicate claim at " +
+                    claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
+            return;
+        }
+
         // Save to database first
         plugin.getDatabaseManager().saveClaim(claim);
 
@@ -161,7 +190,6 @@ public class ClaimManager {
 
         plugin.getLogger().info("Added claim for " + claim.getOwner() + " at " +
                 claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
-
 
         if (plugin.getBlueMapIntegration() != null) {
             plugin.getBlueMapIntegration().updateClaim(claim);

@@ -66,11 +66,7 @@ public class Main extends JavaPlugin {
                 getDataFolder().mkdirs();
             }
 
-            saveDefaultConfig();
-
-            // Load flight states
-            loadFlightStates();
-            // Initialize database first
+            // Initialize database first - this should be the only data source
             try {
                 getLogger().info("Initializing database...");
                 this.databaseManager = new DatabaseManager(this);
@@ -80,17 +76,11 @@ public class Main extends JavaPlugin {
                 throw e;
             }
 
-            // Initialize managers
-            try {
-                getLogger().info("Starting manager initialization...");
-                initializeManagers();
-                managersInitialized = true;
-                getLogger().info("Managers initialized successfully.");
-            } catch (Exception e) {
-                getLogger().severe("Failed to initialize managers: " + e.getMessage());
-                e.printStackTrace();
-                throw e;
-            }
+            // Initialize managers - but don't load from YAML
+            initializeManagers();
+
+            // Load claims from database only
+            claimManager.loadClaimsFromDatabase();
 
             // Register events with error handling
             try {
@@ -229,8 +219,6 @@ public class Main extends JavaPlugin {
             this.dataManager = new DataManager(this);
             if (dataManager == null) throw new IllegalStateException("DataManager failed to initialize");
 
-
-
             // Initialize core systems
             getLogger().info("Initializing BlockAccumulator...");
             this.blockAccumulator = new BlockAccumulator(this);
@@ -242,7 +230,7 @@ public class Main extends JavaPlugin {
 
             // Load claims after ClaimManager is initialized
             getLogger().info("Loading claims...");
-            this.claimManager.loadClaims();
+            this.claimManager.loadClaimsFromDatabase();
 
             getLogger().info("Initializing WorldSettingsManager...");
             this.worldSettingsManager = new WorldSettingsManager(this);
@@ -263,11 +251,6 @@ public class Main extends JavaPlugin {
             this.globalFlagsGui = new GlobalFlagsGUI(this);
             this.gui = new GUI(this);
 
-            // Verify GUI initialization
-            if (mainClaimGui == null) throw new IllegalStateException("MainClaimGUI failed to initialize");
-            if (trustGui == null) throw new IllegalStateException("TrustGUI failed to initialize");
-            if (flagGui == null) throw new IllegalStateException("FlagGUI failed to initialize");
-
             // Initialize commands
             getLogger().info("Initializing commands...");
             this.adminCommand = new AdminCommand(this);
@@ -285,16 +268,32 @@ public class Main extends JavaPlugin {
             this.claimStatistics = new ClaimStatistics(this);
             this.claimVisualizer = new ClaimVisualizer(this);
 
-            // Verify critical components
+            // Verify all GUIs are initialized
+            if (mainClaimGui == null) throw new IllegalStateException("MainClaimGUI failed to initialize");
+            if (trustGui == null) throw new IllegalStateException("TrustGUI failed to initialize");
+            if (flagGui == null) throw new IllegalStateException("FlagGUI failed to initialize");
+            if (claimListGui == null) throw new IllegalStateException("ClaimListGUI failed to initialize");
+            if (claimSettingsGui == null) throw new IllegalStateException("ClaimSettingsGUI failed to initialize");
+            if (adminMenuGui == null) throw new IllegalStateException("AdminMenuGUI failed to initialize");
+            if (globalFlagsGui == null) throw new IllegalStateException("GlobalFlagsGUI failed to initialize");
+            if (gui == null) throw new IllegalStateException("GUI failed to initialize");
+
+            // Now verify critical components
             verifyInitialization();
+
+            // Set the flag only after everything is properly initialized
+            managersInitialized = true;
 
             getLogger().info("All managers initialized successfully.");
         } catch (Exception e) {
+            managersInitialized = false;
             getLogger().severe("Error during manager initialization: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Failed to initialize managers", e);
         }
     }
+
+
 
     public boolean shouldSendFlightMessage(UUID playerUUID) {
         long now = System.currentTimeMillis();
@@ -371,11 +370,9 @@ public class Main extends JavaPlugin {
     @Override
     public void onDisable() {
         try {
-            getLogger().info("Saving plugin data...");
-
-            if (claimManager != null) {
-                getLogger().info("Saving claims...");
-                claimManager.saveAllClaims();
+            if (databaseManager != null) {
+                getLogger().info("Closing database connection...");
+                databaseManager.close();
             }
 
             if (blueMapIntegration != null) {
@@ -386,10 +383,7 @@ public class Main extends JavaPlugin {
                 blockAccumulator.saveData();
             }
 
-            if (databaseManager != null) {
-                getLogger().info("Closing database connection...");
-                databaseManager.close();
-            }
+
 
             ConfigurationSection flightSection = getConfig().createSection("flight-states");
             for (Map.Entry<UUID, Boolean> entry : flightStates.entrySet()) {
@@ -546,16 +540,12 @@ public class Main extends JavaPlugin {
         }
     }
     public boolean isInitialized() {
-        if (!isInitialized || !areCriticalComponentsReady()) {
-            getLogger().warning("Plugin not fully initialized!");
-            getLogger().warning("Managers initialized: " + managersInitialized);
-            getLogger().warning("Events registered: " + eventsRegistered);
-            getLogger().warning("Commands registered: " + commandsRegistered);
-            getLogger().warning("Critical components ready: " + areCriticalComponentsReady());
+        if (!managersInitialized) {
             return false;
         }
-        return true;
+        return areCriticalComponentsReady();
     }
+
     private void initializeDatabase() {
         try {
             getLogger().info("Initializing database...");
@@ -613,35 +603,64 @@ public class Main extends JavaPlugin {
         getLogger().info("Attempting plugin recovery...");
 
         try {
-            if (!managersInitialized) {
-                getLogger().info("Reinitializing managers...");
-                initializeManagers();
-                managersInitialized = true;
-            }
+            // Clear existing managers
+            clearManagers();
 
-            if (!eventsRegistered && protectionManager != null) {
-                getLogger().info("Reregistering events...");
-                getServer().getPluginManager().registerEvents(new ClaimListener(this), this);
-                getServer().getPluginManager().registerEvents(new GUIListener(this), this);
-                eventsRegistered = true;
-            }
-
-            if (!commandsRegistered) {
-                getLogger().info("Reregistering commands...");
-                LandClaimsCommand landClaimsCommand = new LandClaimsCommand(this);
-                if (getCommand("landclaims") != null) {
-                    getCommand("landclaims").setExecutor(landClaimsCommand);
-                    getCommand("lc").setExecutor(landClaimsCommand);
-                    commandsRegistered = true;
-                }
-            }
+            // Reinitialize everything
+            initializeManagers();
+            registerEvents();
+            registerCommands();
 
             isInitialized = true;
-            getLogger().info("Recovery attempt completed.");
+            getLogger().info("Recovery attempt completed successfully.");
         } catch (Exception e) {
+            isInitialized = false;
             getLogger().severe("Recovery attempt failed: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+    private void registerEvents() {
+        try {
+            getLogger().info("Registering events...");
+            ClaimListener claimListener = new ClaimListener(this);
+            GUIListener guiListener = new GUIListener(this);
+
+            getServer().getPluginManager().registerEvents(claimListener, this);
+            getServer().getPluginManager().registerEvents(guiListener, this);
+
+            eventsRegistered = true;
+            getLogger().info("Events registered successfully.");
+        } catch (Exception e) {
+            getLogger().severe("Failed to register events: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    private void registerCommands() {
+        try {
+            getLogger().info("Registering commands...");
+            LandClaimsCommand landClaimsCommand = new LandClaimsCommand(this);
+            if (getCommand("landclaims") != null) {
+                getCommand("landclaims").setExecutor(landClaimsCommand);
+                getCommand("lc").setExecutor(landClaimsCommand);
+                commandsRegistered = true;
+                getLogger().info("Commands registered successfully.");
+            } else {
+                throw new IllegalStateException("landclaims command not found in plugin.yml!");
+            }
+        } catch (Exception e) {
+            getLogger().severe("Failed to register commands: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    private void clearManagers() {
+        if (claimManager != null) {
+            claimManager.clearClaims();
+        }
+        // Clear other managers as needed
     }
 
 }
