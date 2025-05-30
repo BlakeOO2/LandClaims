@@ -12,17 +12,14 @@ import org.bukkit.Location;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class BlueMapIntegration {
     private final Main plugin;
     private BlueMapAPI blueMap;
-    private MarkerSet markerSet;
+    private Map<String, MarkerSet> markerSets;
+    private Map<String, BlueMapMap> worldMaps;
     private WebApp webapp;
-    private BlueMapMap map;
     private boolean enabled = false;
     private BukkitTask updateTask;
 
@@ -38,25 +35,10 @@ public class BlueMapIntegration {
 
     public BlueMapIntegration(Main plugin) {
         this.plugin = plugin;
-        plugin.getLogger().info("[BlueMap] Initializing BlueMap integration...");
+        this.markerSets = new HashMap<>();
+        this.worldMaps = new HashMap<>();
 
-        // Force enable in config if not set
-        if (!plugin.getConfig().contains("bluemap.enabled")) {
-            plugin.getConfig().set("bluemap.enabled", true);
-            plugin.saveConfig();
-        }
-
-        if (Bukkit.getPluginManager().getPlugin("BlueMap") != null) {
-            plugin.getLogger().info("[BlueMap] BlueMap plugin found, enabling integration...");
-            BlueMapAPI.onEnable(this::onBlueMapReady);
-            enabled = true;
-        } else {
-            plugin.getLogger().warning("[BlueMap] BlueMap plugin not found!");
-        }
-
-
-
-    // Load configuration
+        // Load configuration
         FileConfiguration config = plugin.getConfig();
         this.updateInterval = config.getInt("bluemap.update-interval", 300);
         this.normalFillColor = parseColor(config.getString("bluemap.markers.normal-claims.fill-color", "#00FF0033"));
@@ -67,7 +49,13 @@ public class BlueMapIntegration {
         this.showSize = config.getBoolean("bluemap.markers.label.show-size", true);
         this.showTrusted = config.getBoolean("bluemap.markers.label.show-trusted", true);
 
-
+        if (Bukkit.getPluginManager().getPlugin("BlueMap") != null) {
+            plugin.getLogger().info("[BlueMap] BlueMap plugin found, enabling integration...");
+            BlueMapAPI.onEnable(this::onBlueMapReady);
+            enabled = true;
+        } else {
+            plugin.getLogger().warning("[BlueMap] BlueMap plugin not found!");
+        }
     }
 
     // In BlueMapIntegration.java
@@ -75,51 +63,76 @@ public class BlueMapIntegration {
         try {
             plugin.getLogger().info("[BlueMap] API received, initializing...");
             this.blueMap = api;
-
-            // Get the webapp
             this.webapp = api.getWebApp();
-            if (webapp == null) {
-                plugin.getLogger().severe("[BlueMap] Failed to get WebApp instance!");
-                return;
+
+            // Initialize maps for each world
+            for (BlueMapMap map : api.getMaps()) {
+                // Get world name from the map ID instead
+                String worldName = map.getId().split(":")[0]; // Usually map IDs are in format "world:surface"
+                worldMaps.put(worldName, map);
+
+                // Create marker set for this world
+                MarkerSet markerSet = MarkerSet.builder()
+                        .label("Land Claims - " + worldName)
+                        .defaultHidden(false)
+                        .toggleable(true)
+                        .build();
+
+                map.getMarkerSets().put("claims_" + worldName, markerSet);
+                markerSets.put(worldName, map.getMarkerSets().get("claims_" + worldName));
+
+                plugin.getLogger().info("[BlueMap] Initialized map for world: " + worldName);
             }
-            plugin.getLogger().info("[BlueMap] WebApp acquired successfully");
 
-            // Get available maps
-            if (api.getMaps().isEmpty()) {
-                plugin.getLogger().severe("[BlueMap] No maps found in BlueMap!");
-                return;
-            }
-
-            // Get first map
-            this.map = api.getMaps().iterator().next();
-            plugin.getLogger().info("[BlueMap] Using map: " + map.getId());
-
-            // Create or get marker set
-            Map<String, MarkerSet> markerSets = map.getMarkerSets();
-            this.markerSet = markerSets.get("claims");
-
-            if (this.markerSet == null) {
-                plugin.getLogger().info("[BlueMap] Creating new marker set...");
-                MarkerSet.Builder builder = MarkerSet.builder();
-                builder.label("Land Claims");
-                builder.defaultHidden(false);
-                builder.toggleable(true);
-                this.markerSet = builder.build();
-                markerSets.put("claims", this.markerSet);
-            }
+            // Start update task
+            startUpdateTask();
 
             // Initial update
             updateAllClaims();
-            plugin.getLogger().info("[BlueMap] Initial claim update completed");
-
-            // Start periodic updates
-            startUpdateTask();
-            plugin.getLogger().info("[BlueMap] BlueMap integration initialized successfully!");
 
         } catch (Exception e) {
             plugin.getLogger().severe("[BlueMap] Error during initialization: " + e.getMessage());
             e.printStackTrace();
             enabled = false;
+        }
+    }
+
+
+    private void addClaimMarker(Claim claim) {
+        String worldName = claim.getWorld();
+        BlueMapMap map = worldMaps.get(worldName);
+        MarkerSet markerSet = markerSets.get(worldName);
+
+        if (map == null || markerSet == null) {
+            plugin.getLogger().warning("[BlueMap] No map/markerset found for world: " + worldName);
+            return;
+        }
+
+        try {
+            Location corner1 = claim.getCorner1();
+            Location corner2 = claim.getCorner2();
+
+            String markerId = "claim_" + claim.getOwner().toString() + "_" +
+                    corner1.getBlockX() + "_" + corner1.getBlockZ();
+
+            Shape shape = Shape.createRect(
+                    (float)corner1.getBlockX(), (float)corner1.getBlockZ(),
+                    (float)corner2.getBlockX(), (float)corner2.getBlockZ()
+            );
+
+            ShapeMarker marker = ShapeMarker.builder()
+                    .label(showOwner ? Bukkit.getOfflinePlayer(claim.getOwner()).getName() + "'s Claim" : "")
+                    .shape(shape, 0.0f)
+                    .fillColor(claim.isAdminClaim() ? adminFillColor : normalFillColor)
+                    .lineColor(claim.isAdminClaim() ? adminBorderColor : normalBorderColor)
+                    .lineWidth(2)
+                    .depthTestEnabled(true)
+                    .build();
+
+            markerSet.getMarkers().put(markerId, marker);
+
+        } catch (Exception e) {
+            plugin.getLogger().warning("[BlueMap] Error adding claim marker: " + e.getMessage());
         }
     }
 
@@ -131,8 +144,7 @@ public class BlueMapIntegration {
         plugin.getLogger().info("[BlueMap] Reloading BlueMap integration...");
 
         // Clear existing markers
-        if (markerSet != null) {
-            plugin.getLogger().info("[BlueMap] Clearing existing markers...");
+        for (MarkerSet markerSet : markerSets.values()) {
             markerSet.getMarkers().clear();
         }
 
@@ -155,6 +167,7 @@ public class BlueMapIntegration {
             updateTask.cancel();
         }
 
+
         updateTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
                 plugin,
                 this::updateAllClaims,
@@ -164,19 +177,16 @@ public class BlueMapIntegration {
     }
 
     public void updateAllClaims() {
-        if (!enabled || blueMap == null || markerSet == null || map == null) {
+        if (!enabled || blueMap == null || markerSets.isEmpty()) {
             plugin.getLogger().warning("[BlueMap] Cannot update claims - integration not properly initialized");
-            plugin.getLogger().warning("[BlueMap] Enabled: " + enabled);
-            plugin.getLogger().warning("[BlueMap] API: " + (blueMap != null));
-            plugin.getLogger().warning("[BlueMap] MarkerSet: " + (markerSet != null));
-            plugin.getLogger().warning("[BlueMap] Map: " + (map != null));
             return;
         }
 
         try {
-            // Clear existing markers
-            markerSet.getMarkers().clear();
-            int count = 0;
+            // Clear existing markers from all marker sets
+            for (MarkerSet markerSet : markerSets.values()) {
+                markerSet.getMarkers().clear();
+            }
 
             // Add markers for all claims
             Set<Claim> claims = plugin.getClaimManager().getAllClaims();
@@ -184,10 +194,8 @@ public class BlueMapIntegration {
 
             for (Claim claim : claims) {
                 addClaimMarker(claim);
-                count++;
             }
 
-            plugin.getLogger().info("[BlueMap] Updated " + count + " claim markers");
         } catch (Exception e) {
             plugin.getLogger().severe("[BlueMap] Error updating claims: " + e.getMessage());
             e.printStackTrace();
@@ -204,81 +212,60 @@ public class BlueMapIntegration {
         }
     }
 
-    private void addClaimMarker(Claim claim) {
-        if (!enabled || blueMap == null || markerSet == null || map == null) return;
 
-        try {
-            Location corner1 = claim.getCorner1();
-            Location corner2 = claim.getCorner2();
-
-            String markerId = "claim_" + claim.getOwner().toString() + "_" +
-                    corner1.getBlockX() + "_" + corner1.getBlockZ();
-
-            plugin.getLogger().info("[BlueMap] Adding marker for claim at " +
-                    corner1.getBlockX() + "," + corner1.getBlockZ());
-
-            // Create shape
-            Shape shape = Shape.createRect(
-                    (float)corner1.getBlockX(), (float)corner1.getBlockZ(),
-                    (float)corner2.getBlockX(), (float)corner2.getBlockZ()
-            );
-
-            // Get colors from config
-            Color fillColor = claim.isAdminClaim() ? adminFillColor : normalFillColor;
-            Color borderColor = claim.isAdminClaim() ? adminBorderColor : normalBorderColor;
-
-            // Create marker
-            ShapeMarker marker = ShapeMarker.builder()
-                    .label(showOwner ? Bukkit.getOfflinePlayer(claim.getOwner()).getName() + "'s Claim" : "")
-                    .shape(shape, 0.0f)
-                    .fillColor(fillColor)
-                    .lineColor(borderColor)
-                    .lineWidth(2)
-                    .depthTestEnabled(true)
-                    .build();
-
-            // Add marker to set
-            markerSet.getMarkers().put(markerId, marker);
-
-        } catch (Exception e) {
-            plugin.getLogger().warning("[BlueMap] Error adding claim marker: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
 
 
 
 
     public void updateClaim(Claim claim) {
-        if (!enabled || blueMap == null || markerSet == null || map == null) return;
+        if (!enabled || blueMap == null) return;
 
-        String markerId = "claim_" + claim.getOwner().toString() + "_" +
-                claim.getCorner1().getBlockX() + "_" +
-                claim.getCorner1().getBlockZ();
+        String worldName = claim.getWorld();
+        MarkerSet markerSet = markerSets.get(worldName);
 
-        markerSet.getMarkers().remove(markerId);
-        addClaimMarker(claim);
+        if (markerSet != null) {
+            String markerId = "claim_" + claim.getOwner().toString() + "_" +
+                    claim.getCorner1().getBlockX() + "_" +
+                    claim.getCorner1().getBlockZ();
+
+            markerSet.getMarkers().remove(markerId);
+            addClaimMarker(claim);
+        }
     }
 
     public void removeClaim(Claim claim) {
-        if (!enabled || blueMap == null || markerSet == null || map == null) return;
+        if (!enabled || blueMap == null) return;
 
-        String markerId = "claim_" + claim.getOwner().toString() + "_" +
-                claim.getCorner1().getBlockX() + "_" +
-                claim.getCorner1().getBlockZ();
+        String worldName = claim.getWorld();
+        MarkerSet markerSet = markerSets.get(worldName);
 
-        markerSet.getMarkers().remove(markerId);
+        if (markerSet != null) {
+            String markerId = "claim_" + claim.getOwner().toString() + "_" +
+                    claim.getCorner1().getBlockX() + "_" +
+                    claim.getCorner1().getBlockZ();
+
+            markerSet.getMarkers().remove(markerId);
+        }
     }
 
     public void disable() {
-        if (markerSet != null) {
+        for (MarkerSet markerSet : markerSets.values()) {
             markerSet.getMarkers().clear();
         }
+        markerSets.clear();
+        worldMaps.clear();
         enabled = false;
+        if (updateTask != null) {
+            updateTask.cancel();
+            updateTask = null;
+        }
         plugin.getLogger().info("[BlueMap] Integration disabled");
     }
 
     public boolean isEnabled() {
-        return enabled && blueMap != null && markerSet != null && map != null;
+        return enabled && blueMap != null && !markerSets.isEmpty();
     }
+
+
+
 }

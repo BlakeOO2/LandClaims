@@ -3,6 +3,7 @@ package org.example;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 
@@ -171,25 +172,38 @@ private void startCacheRefreshTask() {
             }
         }
     }
+    // In ClaimManager.java
+    public void debugCache() {
+        plugin.getLogger().info("=== Cache Debug ===");
+        plugin.getLogger().info("Total player claims cached: " + playerClaims.size());
+        plugin.getLogger().info("Total world claims cached: " + worldClaims.size());
+
+        for (Map.Entry<UUID, Set<Claim>> entry : playerClaims.entrySet()) {
+            OfflinePlayer player = Bukkit.getOfflinePlayer(entry.getKey());
+            plugin.getLogger().info(player.getName() + " has " + entry.getValue().size() + " claims");
+        }
+
+        for (Map.Entry<String, Set<Claim>> entry : worldClaims.entrySet()) {
+            plugin.getLogger().info("World " + entry.getKey() + " has " + entry.getValue().size() + " claims");
+        }
+    }
+
 
 
     // Add periodic cache refresh
     public void addClaim(Claim claim) {
-        // Check for duplicates before adding
-        if (plugin.getDatabaseManager().isDuplicateClaim(claim)) {
-            plugin.getLogger().warning("Attempted to add duplicate claim at " +
-                    claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
-            return;
-        }
+        plugin.getLogger().info("[Debug] Adding claim to cache for " +
+                Bukkit.getOfflinePlayer(claim.getOwner()).getName());
 
         // Save to database first
         plugin.getDatabaseManager().saveClaim(claim);
 
         // Add to cache
-        addClaimToCache(claim);
+        playerClaims.computeIfAbsent(claim.getOwner(), k -> new HashSet<>()).add(claim);
+        worldClaims.computeIfAbsent(claim.getWorld(), k -> new HashSet<>()).add(claim);
 
-        plugin.getLogger().info("Added claim for " + claim.getOwner() + " at " +
-                claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
+        plugin.getLogger().info("[Debug] Cache updated. Player now has " +
+                getPlayerClaims(claim.getOwner()).size() + " claims");
 
         if (plugin.getBlueMapIntegration() != null) {
             plugin.getBlueMapIntegration().updateClaim(claim);

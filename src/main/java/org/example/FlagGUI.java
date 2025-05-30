@@ -28,6 +28,11 @@ public class FlagGUI {
         // Add all flags
         int slot = 0;
         for (ClaimFlag flag : ClaimFlag.values()) {
+            // Skip WILD flags completely as they're only for world settings
+            if (flag == ClaimFlag.WILD_BUILD || flag == ClaimFlag.WILD_INTERACT) {
+                continue;
+            }
+
             boolean isEnabled = claim.getFlag(flag);
             ItemStack flagItem = createFlagItem(flag, isEnabled);
             inv.setItem(slot++, flagItem);
@@ -41,6 +46,8 @@ public class FlagGUI {
         openMenus.put(player.getUniqueId(), claim);
         player.openInventory(inv);
     }
+
+
 
     private ItemStack createFlagItem(ClaimFlag flag, boolean enabled) {
         Material material = enabled ? Material.LIME_DYE : Material.GRAY_DYE;
@@ -153,6 +160,25 @@ public class FlagGUI {
                 description.add("§7build and break blocks");
                 description.add("§7in this claim");
                 break;
+            case TRUSTED_INTERACTIVE:
+                description.add("§7Allows trusted players to use");
+                description.add("§7pressure plates, buttons,");
+                description.add("§7levers, and other interactive");
+                description.add("§7blocks in this claim");
+                break;
+            case SUPPRESS_SIGN_MESSAGES:
+                description.add("§7Suppress the message");
+                description.add("§7that shows up when you,");
+                description.add("§7hit a sign, used for claims");
+                description.add("§7with chest shops.");
+                break;
+
+            case UNTRUSTED_INTERACTIVE:
+                description.add("§7Allows untrusted players to use");
+                description.add("§7pressure plates, buttons,");
+                description.add("§7levers, and other interactive");
+                description.add("§7blocks in this claim");
+                break;
             case UNTRUSTED_VILLAGER_TRADING:
                 description.add("§7Allows untrusted players to");
                 description.add("§7trade with villagers");
@@ -175,7 +201,15 @@ public class FlagGUI {
     // In FlagGUI.java
     public void handleClick(Player player, ItemStack clicked, InventoryClickEvent event) {
         Claim claim = openMenus.get(player.getUniqueId());
-        if (claim == null) return;
+        if (claim == null) {
+            plugin.getLogger().warning("[Debug] No claim found in open menus for " + player.getName());
+            return;
+        }
+
+        plugin.getLogger().info("[Debug] Handling flag click for claim at: " +
+                claim.getWorld() + " [" +
+                claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ() + "] to [" +
+                claim.getCorner2().getBlockX() + "," + claim.getCorner2().getBlockZ() + "]");
 
         // Check if player can modify flags
         if (!claim.getOwner().equals(player.getUniqueId()) &&
@@ -185,7 +219,6 @@ public class FlagGUI {
         }
 
         if (clicked.getType() == Material.ARROW) {
-            // Back to main menu
             plugin.getMainClaimGui().openMainMenu(player);
             return;
         }
@@ -196,8 +229,12 @@ public class FlagGUI {
         try {
             ClaimFlag flag = ClaimFlag.valueOf(flagName);
             boolean newValue = !claim.getFlag(flag);
+
+            plugin.getLogger().info("[Debug] Updating flag " + flag + " to " + newValue +
+                    " for claim at " + claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
+
             claim.setFlag(flag, newValue);
-            plugin.getDataManager().saveClaim(claim);
+            plugin.getDatabaseManager().updateClaimFlags(claim);
 
             // Update just this item instead of refreshing the whole menu
             int slot = event.getRawSlot();
@@ -207,9 +244,10 @@ public class FlagGUI {
             player.sendMessage("§a[LandClaims] " + formatFlagName(flag) +
                     " is now " + (newValue ? "enabled" : "disabled"));
         } catch (IllegalArgumentException e) {
-            // Invalid flag name
+            plugin.getLogger().warning("[Debug] Invalid flag name: " + flagName);
         }
     }
+
 
 
     public void cleanup(Player player) {

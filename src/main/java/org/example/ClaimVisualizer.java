@@ -117,6 +117,22 @@ public class ClaimVisualizer {
             e.printStackTrace();
         }
     }
+    private int findSafeYLevel(World world, int x, int z, Player player) {
+        // Start from player's Y level
+        int startY = player.getLocation().getBlockY();
+
+        // Look down from player's position to find the highest non-air block
+        for (int y = startY; y > world.getMinHeight(); y--) {
+            Location loc = new Location(world, x, y - 1, z);
+            if (!loc.getBlock().getType().isAir() && loc.getBlock().getType().isSolid()) {
+                // Return one block above the solid block
+                return y;
+            }
+        }
+
+        // If no solid block found, use the highest block at that location
+        return world.getHighestBlockYAt(x, z) + 1;
+    }
 
 
 
@@ -133,10 +149,60 @@ public class ClaimVisualizer {
             showBorderBlock(player, new Location(world, maxX, y, z), visualBlocks);
         }
     }
-
+    private int interpolateY(int current, int min, int max, int y1, int y2) {
+        if (max == min) return y1;
+        double progress = (double)(current - min) / (max - min);
+        return (int) Math.round(y1 + (y2 - y1) * progress);
+    }
     private void showBorderBlock(Player player, Location location, Set<Location> visualBlocks) {
-        player.sendBlockChange(location, borderMaterial.createBlockData());
-        visualBlocks.add(location);
+        try {
+            // Schedule the block change on the main thread
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                // Store the original block data
+                BlockData originalData = location.getBlock().getBlockData();
+                // Send the fake block change
+                player.sendBlockChange(location, borderMaterial.createBlockData());
+                visualBlocks.add(location.clone());
+                plugin.getLogger().info("[Debug] Sent border block change at " +
+                        location.getBlockX() + "," + location.getBlockY() + "," + location.getBlockZ());
+
+                // Schedule a check to ensure the block change was applied
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    if (visualBlocks.contains(location)) {
+                        player.sendBlockChange(location, borderMaterial.createBlockData());
+                    }
+                }, 5L);
+            });
+        } catch (Exception e) {
+            plugin.getLogger().severe("[Debug] Error showing border block: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+
+    private void showBorders(Player player, World world, int minX, int maxX, int minZ, int maxZ,
+                             int[] yLevels, Set<Location> visualBlocks) {
+        int spacing = plugin.getConfig().getInt("visualization.spacing", 10);
+
+        // North and South borders
+        for (int x = minX + spacing; x < maxX; x += spacing) {
+            // Interpolate Y level between corners
+            int northY = interpolateY(x, minX, maxX, yLevels[0], yLevels[2]);
+            int southY = interpolateY(x, minX, maxX, yLevels[1], yLevels[3]);
+
+            showBorderBlock(player, new Location(world, x, northY, minZ), visualBlocks);
+            showBorderBlock(player, new Location(world, x, southY, maxZ), visualBlocks);
+        }
+
+        // East and West borders
+        for (int z = minZ + spacing; z < maxZ; z += spacing) {
+            // Interpolate Y level between corners
+            int westY = interpolateY(z, minZ, maxZ, yLevels[0], yLevels[1]);
+            int eastY = interpolateY(z, minZ, maxZ, yLevels[2], yLevels[3]);
+
+            showBorderBlock(player, new Location(world, minX, westY, z), visualBlocks);
+            showBorderBlock(player, new Location(world, maxX, eastY, z), visualBlocks);
+        }
     }
 
     public void hideVisualization(Player player) {
@@ -168,7 +234,29 @@ public class ClaimVisualizer {
         // Show all nearby claims
         Set<Location> visualBlocks = new HashSet<>();
         for (Claim claim : nearbyClaims) {
-            visualizeClaim(player, claim, visualBlocks);
+            Location corner1 = claim.getCorner1();
+            Location corner2 = claim.getCorner2();
+
+            int minX = Math.min(corner1.getBlockX(), corner2.getBlockX());
+            int maxX = Math.max(corner1.getBlockX(), corner2.getBlockX());
+            int minZ = Math.min(corner1.getBlockZ(), corner2.getBlockZ());
+            int maxZ = Math.max(corner1.getBlockZ(), corner2.getBlockZ());
+
+            // Find appropriate Y level for each corner
+            int y1 = findSafeYLevel(corner1.getWorld(), minX, minZ, player);
+            int y2 = findSafeYLevel(corner1.getWorld(), minX, maxZ, player);
+            int y3 = findSafeYLevel(corner1.getWorld(), maxX, minZ, player);
+            int y4 = findSafeYLevel(corner1.getWorld(), maxX, maxZ, player);
+
+            // Show corners at their respective Y levels
+            showCornerBlock(player, new Location(corner1.getWorld(), minX, y1, minZ), visualBlocks);
+            showCornerBlock(player, new Location(corner1.getWorld(), minX, y2, maxZ), visualBlocks);
+            showCornerBlock(player, new Location(corner1.getWorld(), maxX, y3, minZ), visualBlocks);
+            showCornerBlock(player, new Location(corner1.getWorld(), maxX, y4, maxZ), visualBlocks);
+
+            // Show borders using the Y levels of the nearest corners
+            showBorders(player, corner1.getWorld(), minX, maxX, minZ, maxZ,
+                    new int[]{y1, y2, y3, y4}, visualBlocks);
         }
 
         activeVisualizations.put(player.getUniqueId(), visualBlocks);

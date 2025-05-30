@@ -121,9 +121,9 @@ public class ProtectionManager {
 
         return false;
     }
-    private Sign findShopSign(Block container) {
+    private Sign findShopSign(Block block) {
         for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
-            Block relative = container.getRelative(face);
+            Block relative = block.getRelative(face);
             if (relative.getState() instanceof Sign) {
                 Sign sign = (Sign) relative.getState();
                 if (isChestShopSign(sign)) {
@@ -145,34 +145,44 @@ public class ProtectionManager {
         }
         return false;
     }
+    private boolean isInteractiveBlock(Material type) {
+        return type.name().contains("PRESSURE_PLATE") ||
+                type.name().contains("BUTTON") ||
+                type == Material.LEVER ||
+                type == Material.TRIPWIRE ||
+                type == Material.TRIPWIRE_HOOK ||
+                type == Material.DAYLIGHT_DETECTOR ||
+                type == Material.TARGET;
+    }
 
     public boolean canInteract(Player player, Block block) {
+        // Skip if using claiming tool
+        if (player.getInventory().getItemInMainHand().getType() == Material.GOLDEN_SHOVEL) {
+            return true;
+        }
+
+        // Always allow access to these blocks
+        if (block.getType() == Material.ENDER_CHEST) {
+            return true;
+        }
+        if (block.getType() == Material.CRAFTING_TABLE) {
+            return true;
+        }
+
         // First check if it's a ChestShop container
         if (isChestShopContainer(block)) {
             // Find the shop sign
             Sign shopSign = findShopSign(block);
             if (shopSign != null) {
-                // Get the shop owner from the sign (first line)
                 String ownerName = ChatColor.stripColor(shopSign.getLine(0));
-
-                // Only allow access if:
-                // 1. Player is the shop owner, or
-                // 2. Player has admin bypass permission AND is in bypass mode
-                boolean isOwner = player.getName().equals(ownerName);
-                boolean hasAdminBypass = player.hasPermission("chestshop.admin.chestbypass") &&
-                        hasChestShopBypass(player);
-
-                if (!isOwner && !hasAdminBypass) {
-                    player.sendMessage("§c[LandClaims] This container belongs to a ChestShop. Use the shop sign to trade.");
-                    return false;
-                }
-                return true;
+                // Only allow access if player is the shop owner or has admin bypass
+                return player.getName().equals(ownerName) ||
+                        (player.hasPermission("chestshop.admin.chestbypass") &&
+                                hasChestShopBypass(player));
             }
-            // If we found a shop container but no sign, deny access to be safe
-            return false;
+            return false; // If we can't find the sign, deny access to be safe
         }
 
-        // Regular claim container checks...
         Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
         if (claim == null) return true;
 
@@ -186,26 +196,27 @@ public class ProtectionManager {
         }
 
         boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
-        String blockType = block.getType().name();
+
+        // Check for interactive blocks
+        Material type = block.getType();
+        if (isInteractiveBlock(type)) {
+            return isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_INTERACTIVE);
+        }
 
         // Check containers
-        if (blockType.contains("CHEST") ||
-                blockType.contains("FURNACE") ||
-                blockType.contains("BARREL") ||
-                blockType.contains("SHULKER") ||
-                blockType.contains("DISPENSER") ||
-                blockType.contains("DROPPER") ||
-                blockType.contains("HOPPER")) {
+        if (block.getState() instanceof Container) {
             return isTrusted ?
                     claim.getFlag(ClaimFlag.TRUSTED_CONTAINERS) :
                     claim.getFlag(ClaimFlag.UNTRUSTED_CONTAINERS);
         }
 
         // Check doors
-        if (blockType.contains("DOOR") ||
-                blockType.contains("GATE") ||
-                blockType.contains("TRAPDOOR") ||
-                blockType.contains("FENCE_GATE")) {
+        if (type.name().contains("DOOR") ||
+                type.name().contains("GATE") ||
+                type.name().contains("TRAPDOOR") ||
+                type.name().contains("FENCE_GATE")) {
             return isTrusted ?
                     claim.getFlag(ClaimFlag.TRUSTED_DOORS) :
                     claim.getFlag(ClaimFlag.UNTRUSTED_DOORS);
@@ -228,6 +239,10 @@ public class ProtectionManager {
         }
         return false;
     }
+
+
+
+
 
     public boolean canTradeWithVillager(Player player, Location location) {
         Claim claim = plugin.getClaimManager().getClaimAt(location);

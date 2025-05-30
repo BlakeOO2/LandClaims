@@ -77,7 +77,7 @@ public class TrustGUI {
             if (isRightClick) {
                 // Remove trust
                 claim.setTrust(targetUUID, null);
-                plugin.getDataManager().saveClaim(claim);
+                plugin.getDatabaseManager().updateClaimTrustedPlayers(claim); // Use new method
                 openTrustMenu(player, claim); // Refresh menu
                 player.sendMessage("§a[LandClaims] Removed trust for " + meta.getOwningPlayer().getName());
             } else {
@@ -85,7 +85,7 @@ public class TrustGUI {
                 TrustLevel current = claim.getTrustLevel(targetUUID);
                 TrustLevel next = getNextTrustLevel(current);
                 claim.setTrust(targetUUID, next);
-                plugin.getDataManager().saveClaim(claim);
+                plugin.getDatabaseManager().updateClaimTrustedPlayers(claim); // Use new method
 
                 // Update just this item
                 List<String> lore = new ArrayList<>();
@@ -131,20 +131,18 @@ public class TrustGUI {
                     @SuppressWarnings("deprecation")
                     OfflinePlayer target = Bukkit.getOfflinePlayer(input);
 
-                    // Check if player exists
                     if (!target.hasPlayedBefore() && !target.isOnline()) {
                         player.sendMessage("§c[LandClaims] Player not found: " + input);
                         return;
                     }
 
-                    // Don't allow trusting themselves
                     if (target.getUniqueId().equals(player.getUniqueId())) {
                         player.sendMessage("§c[LandClaims] You can't trust yourself!");
                         return;
                     }
 
                     claim.setTrust(target.getUniqueId(), TrustLevel.BUILD);
-                    plugin.getDataManager().saveClaim(claim);
+                    plugin.getDatabaseManager().updateClaimTrustedPlayers(claim); // Use new method
                     player.sendMessage("§a[LandClaims] Successfully trusted " + target.getName() + " with BUILD access.");
 
                     // Reopen the trust menu

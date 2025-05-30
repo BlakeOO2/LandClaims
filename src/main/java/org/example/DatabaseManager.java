@@ -271,37 +271,137 @@ public class DatabaseManager {
     public void saveClaim(Claim claim) {
         try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
             Connection conn = transaction.getConnection();
+            plugin.getLogger().info("[Debug] Attempting to save claim at location: " +
+                    claim.getWorld() + " " + claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
 
-            try (PreparedStatement stmt = conn.prepareStatement(
-                    "INSERT INTO claims (owner, world, corner1_x, corner1_z, " +
-                            "corner2_x, corner2_z, is_admin_claim) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    Statement.RETURN_GENERATED_KEYS)) {
+            // First try to find existing claim by exact location
+            int existingClaimId = findExistingClaimId(conn, claim);
+            plugin.getLogger().info("[Debug] Existing claim ID search result: " + existingClaimId);
 
-                stmt.setString(1, claim.getOwner().toString());
-                stmt.setString(2, claim.getWorld());
-                stmt.setInt(3, claim.getCorner1().getBlockX());
-                stmt.setInt(4, claim.getCorner1().getBlockZ());
-                stmt.setInt(5, claim.getCorner2().getBlockX());
-                stmt.setInt(6, claim.getCorner2().getBlockZ());
-                stmt.setBoolean(7, claim.isAdminClaim());
-
-                stmt.executeUpdate();
-
-                ResultSet rs = stmt.getGeneratedKeys();
-                if (rs.next()) {
-                    int claimId = rs.getInt(1);
-                    saveTrustedPlayers(conn, claimId, claim.getTrustedPlayers());
-                    saveFlags(conn, claimId, claim.getFlags());
-                }
+            int claimId;
+            if (existingClaimId != -1) {
+                // Update existing claim
+                updateExistingClaim(conn, existingClaimId, claim);
+                claimId = existingClaimId;
+                plugin.getLogger().info("[Debug] Updated existing claim ID: " + claimId);
+            } else {
+                // Insert new claim
+                claimId = insertNewClaim(conn, claim);
+                plugin.getLogger().info("[Debug] Inserted new claim with ID: " + claimId);
             }
 
+            // Update trusted players and flags
+            updateTrustedPlayers(conn, claimId, claim);
+            updateFlags(conn, claimId, claim.getFlags());
+
             transaction.commit();
+            plugin.getLogger().info("[Debug] Successfully saved all claim data for ID: " + claimId);
+
         } catch (SQLException e) {
             plugin.getLogger().severe("Error saving claim: " + e.getMessage());
             e.printStackTrace();
         }
     }
+
+    private int findExistingClaimId(Connection conn, Claim claim) throws SQLException {
+        String sql = "SELECT id FROM claims WHERE " +
+                "world = ? AND " +
+                "corner1_x = ? AND corner1_z = ? AND " +
+                "corner2_x = ? AND corner2_z = ? AND " +
+                "owner = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, claim.getWorld());
+            stmt.setInt(2, claim.getCorner1().getBlockX());
+            stmt.setInt(3, claim.getCorner1().getBlockZ());
+            stmt.setInt(4, claim.getCorner2().getBlockX());
+            stmt.setInt(5, claim.getCorner2().getBlockZ());
+            stmt.setString(6, claim.getOwner().toString());
+
+            plugin.getLogger().info("[Debug] Searching for existing claim with SQL: " + sql);
+            plugin.getLogger().info("[Debug] Parameters: " + claim.getWorld() + ", " +
+                    claim.getCorner1().getBlockX() + ", " + claim.getCorner1().getBlockZ() + ", " +
+                    claim.getCorner2().getBlockX() + ", " + claim.getCorner2().getBlockZ() + ", " +
+                    claim.getOwner());
+
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("id");
+            }
+        }
+        return -1;
+    }
+
+    private void updateExistingClaim(Connection conn, int claimId, Claim claim) throws SQLException {
+        String sql = "UPDATE claims SET is_admin_claim = ? WHERE id = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setBoolean(1, claim.isAdminClaim());
+            stmt.setInt(2, claimId);
+            stmt.executeUpdate();
+        }
+    }
+
+    private int insertNewClaim(Connection conn, Claim claim) throws SQLException {
+        String sql = "INSERT INTO claims (owner, world, corner1_x, corner1_z, corner2_x, corner2_z, is_admin_claim) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setString(1, claim.getOwner().toString());
+            stmt.setString(2, claim.getWorld());
+            stmt.setInt(3, claim.getCorner1().getBlockX());
+            stmt.setInt(4, claim.getCorner1().getBlockZ());
+            stmt.setInt(5, claim.getCorner2().getBlockX());
+            stmt.setInt(6, claim.getCorner2().getBlockZ());
+            stmt.setBoolean(7, claim.isAdminClaim());
+
+            stmt.executeUpdate();
+            ResultSet rs = stmt.getGeneratedKeys();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            throw new SQLException("Failed to get generated claim ID");
+        }
+    }
+
+    private void updateTrustedPlayers(Connection conn, int claimId, Claim claim) throws SQLException {
+        // First delete existing trusted players
+        try (PreparedStatement delete = conn.prepareStatement("DELETE FROM trusted_players WHERE claim_id = ?")) {
+            delete.setInt(1, claimId);
+            delete.executeUpdate();
+        }
+
+        // Insert new trusted players
+        String sql = "INSERT INTO trusted_players (claim_id, player_uuid, trust_level) VALUES (?, ?, ?)";
+        try (PreparedStatement insert = conn.prepareStatement(sql)) {
+            for (Map.Entry<UUID, TrustLevel> entry : claim.getTrustedPlayers().entrySet()) {
+                insert.setInt(1, claimId);
+                insert.setString(2, entry.getKey().toString());
+                insert.setString(3, entry.getValue().name());
+                insert.executeUpdate();
+            }
+        }
+    }
+
+    private void updateFlags(Connection conn, int claimId, Map<ClaimFlag, Boolean> flags) throws SQLException {
+        // First delete existing flags
+        try (PreparedStatement delete = conn.prepareStatement("DELETE FROM claim_flags WHERE claim_id = ?")) {
+            delete.setInt(1, claimId);
+            delete.executeUpdate();
+        }
+
+        // Insert new flags
+        try (PreparedStatement insert = conn.prepareStatement(
+                "INSERT INTO claim_flags (claim_id, flag_name, flag_value) VALUES (?, ?, ?)")) {
+            for (Map.Entry<ClaimFlag, Boolean> entry : flags.entrySet()) {
+                insert.setInt(1, claimId);
+                insert.setString(2, entry.getKey().name());
+                insert.setBoolean(3, entry.getValue());
+                insert.executeUpdate();
+            }
+        }
+    }
+
+
 
 
     private void saveTrustedPlayers(Connection conn, int claimId, Map<UUID, TrustLevel> trustedPlayers) throws SQLException {
@@ -323,6 +423,82 @@ public class DatabaseManager {
             }
         }
     }
+
+    public void updateClaimFlags(Claim claim) {
+        try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
+            Connection conn = transaction.getConnection();
+
+            // Find the existing claim ID
+            int claimId = findClaimId(conn, claim);
+            if (claimId == -1) {
+                plugin.getLogger().warning("Could not find claim to update flags!");
+                return;
+            }
+
+            // Update the flags
+            updateFlags(conn, claimId, claim.getFlags());
+
+            transaction.commit();
+            plugin.getLogger().info("Successfully updated flags for claim " + claimId);
+
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Error updating claim flags: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+
+    private int findClaimId(Connection conn, Claim claim) throws SQLException {
+        String sql = "SELECT id FROM claims WHERE " +
+                "owner = ? AND world = ? AND " +
+                "corner1_x = ? AND corner1_z = ? AND " +
+                "corner2_x = ? AND corner2_z = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, claim.getOwner().toString());
+            stmt.setString(2, claim.getWorld());
+            stmt.setInt(3, claim.getCorner1().getBlockX());
+            stmt.setInt(4, claim.getCorner1().getBlockZ());
+            stmt.setInt(5, claim.getCorner2().getBlockX());
+            stmt.setInt(6, claim.getCorner2().getBlockZ());
+
+            plugin.getLogger().info("[Debug] Executing query: " + sql);
+            plugin.getLogger().info("[Debug] Parameters: [" +
+                    claim.getOwner() + ", " +
+                    claim.getWorld() + ", " +
+                    claim.getCorner1().getBlockX() + ", " +
+                    claim.getCorner1().getBlockZ() + ", " +
+                    claim.getCorner2().getBlockX() + ", " +
+                    claim.getCorner2().getBlockZ() + "]");
+
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                int id = rs.getInt("id");
+                plugin.getLogger().info("[Debug] Found claim with ID: " + id);
+                return id;
+            }
+
+            plugin.getLogger().warning("[Debug] No matching claim found in database");
+            return -1;
+        }
+    }
+
+    private void logAllClaimsForOwner(Connection conn, UUID owner) throws SQLException {
+        String sql = "SELECT * FROM claims WHERE owner = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, owner.toString());
+            ResultSet rs = stmt.executeQuery();
+
+            plugin.getLogger().info("[Debug] All claims for owner " + owner + ":");
+            while (rs.next()) {
+                plugin.getLogger().info("[Debug] Claim ID: " + rs.getInt("id") +
+                        " World: " + rs.getString("world") +
+                        " Corners: [" + rs.getInt("corner1_x") + "," + rs.getInt("corner1_z") +
+                        "] to [" + rs.getInt("corner2_x") + "," + rs.getInt("corner2_z") + "]");
+            }
+        }
+    }
+
 
     public void updateClaim(Claim claim) {
         try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
@@ -377,6 +553,70 @@ public class DatabaseManager {
             e.printStackTrace();
         }
     }
+
+    public void updateClaimTrustedPlayers(Claim claim) {
+        try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
+            Connection conn = transaction.getConnection();
+
+            // First, find the claim ID
+            int claimId;
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT id FROM claims WHERE owner = ? AND world = ? AND " +
+                            "corner1_x = ? AND corner1_z = ? AND corner2_x = ? AND corner2_z = ?")) {
+
+                stmt.setString(1, claim.getOwner().toString());
+                stmt.setString(2, claim.getWorld());
+                stmt.setInt(3, claim.getCorner1().getBlockX());
+                stmt.setInt(4, claim.getCorner1().getBlockZ());
+                stmt.setInt(5, claim.getCorner2().getBlockX());
+                stmt.setInt(6, claim.getCorner2().getBlockZ());
+
+                plugin.getLogger().info("[Debug] Looking for claim to update trusted players at: " +
+                        claim.getWorld() + " " + claim.getCorner1().getBlockX() + "," +
+                        claim.getCorner1().getBlockZ());
+
+                ResultSet rs = stmt.executeQuery();
+                if (!rs.next()) {
+                    plugin.getLogger().warning("[Debug] Could not find claim to update trusted players!");
+                    return;
+                }
+                claimId = rs.getInt("id");
+                plugin.getLogger().info("[Debug] Found claim ID: " + claimId + " for trusted players update");
+            }
+
+            // Delete existing trusted players
+            try (PreparedStatement delete = conn.prepareStatement(
+                    "DELETE FROM trusted_players WHERE claim_id = ?")) {
+                delete.setInt(1, claimId);
+                int deleted = delete.executeUpdate();
+                plugin.getLogger().info("[Debug] Deleted " + deleted + " existing trusted players entries");
+            }
+
+            // Insert new trusted players
+            if (!claim.getTrustedPlayers().isEmpty()) {
+                try (PreparedStatement insert = conn.prepareStatement(
+                        "INSERT INTO trusted_players (claim_id, player_uuid, trust_level) VALUES (?, ?, ?)")) {
+                    for (Map.Entry<UUID, TrustLevel> entry : claim.getTrustedPlayers().entrySet()) {
+                        insert.setInt(1, claimId);
+                        insert.setString(2, entry.getKey().toString());
+                        insert.setString(3, entry.getValue().name());
+                        insert.executeUpdate();
+                        plugin.getLogger().info("[Debug] Added trusted player " +
+                                Bukkit.getOfflinePlayer(entry.getKey()).getName() +
+                                " with level " + entry.getValue() + " to claim " + claimId);
+                    }
+                }
+            }
+
+            transaction.commit();
+            plugin.getLogger().info("[Debug] Successfully updated trusted players for claim " + claimId);
+
+        } catch (SQLException e) {
+            plugin.getLogger().severe("Error updating claim trusted players: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
 
     public void updateClaimLocation(Claim claim, Location oldCorner1, Location oldCorner2) {
         try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
@@ -877,12 +1117,11 @@ public class DatabaseManager {
     }
 
     private Claim loadClaim(ResultSet rs) throws SQLException {
-        int claimId = rs.getInt("id");
         UUID owner = UUID.fromString(rs.getString("owner"));
         String worldName = rs.getString("world");
         World world = Bukkit.getWorld(worldName);
+        int claimId = rs.getInt("id");
 
-        // Create locations with y=0, since claims extend full height
         Location corner1 = new Location(world,
                 rs.getInt("corner1_x"),
                 0,
@@ -896,8 +1135,29 @@ public class DatabaseManager {
         Claim claim = new Claim(owner, corner1, corner2);
         claim.setAdminClaim(rs.getBoolean("is_admin_claim"));
 
-        loadTrustedPlayers(claimId, claim);
-        loadFlags(claimId, claim);
+        // Load trusted players
+        try (PreparedStatement stmt = rs.getStatement().getConnection().prepareStatement(
+                "SELECT player_uuid, trust_level FROM trusted_players WHERE claim_id = ?")) {
+            stmt.setInt(1, claimId);
+            ResultSet trustRs = stmt.executeQuery();
+            while (trustRs.next()) {
+                UUID playerUuid = UUID.fromString(trustRs.getString("player_uuid"));
+                TrustLevel level = TrustLevel.valueOf(trustRs.getString("trust_level"));
+                claim.setTrust(playerUuid, level);
+            }
+        }
+
+        // Load flags
+        try (PreparedStatement stmt = rs.getStatement().getConnection().prepareStatement(
+                "SELECT flag_name, flag_value FROM claim_flags WHERE claim_id = ?")) {
+            stmt.setInt(1, claimId);
+            ResultSet flagRs = stmt.executeQuery();
+            while (flagRs.next()) {
+                ClaimFlag flag = ClaimFlag.valueOf(flagRs.getString("flag_name"));
+                boolean value = flagRs.getBoolean("flag_value");
+                claim.setFlag(flag, value);
+            }
+        }
 
         return claim;
     }

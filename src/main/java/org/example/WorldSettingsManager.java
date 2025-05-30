@@ -52,6 +52,7 @@ public class WorldSettingsManager {
         plugin.saveConfig();
     }
 
+
     private void loadGlobalFlags(ConfigurationSection section) {
         globalFlags.clear();
         for (ClaimFlag flag : ClaimFlag.values()) {

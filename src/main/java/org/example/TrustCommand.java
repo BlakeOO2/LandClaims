@@ -14,7 +14,7 @@ public class TrustCommand {
         this.plugin = plugin;
     }
 
-    public boolean handleTrust(Player player, String[] args) {
+    private boolean handleTrust(Player player, String[] args) {
         if (args.length < 2) {
             player.sendMessage("§c[LandClaims] Usage: /lc trust <player> [level]");
             player.sendMessage("§c[LandClaims] Trust levels: ACCESS, BUILD, MANAGE");
@@ -38,7 +38,7 @@ public class TrustCommand {
         // Get the target player
         @SuppressWarnings("deprecation")
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
-        if (target == null || !target.hasPlayedBefore()) {
+        if (!target.hasPlayedBefore() && !target.isOnline()) {
             player.sendMessage("§c[LandClaims] Player not found.");
             return true;
         }
@@ -62,7 +62,9 @@ public class TrustCommand {
 
         // Set the trust level
         claim.setTrust(target.getUniqueId(), trustLevel);
-        plugin.getDataManager().saveClaim(claim);
+
+        // Use the new specific update method
+        plugin.getDatabaseManager().updateClaimTrustedPlayers(claim);
 
         player.sendMessage("§a[LandClaims] Granted " + trustLevel + " access to " + target.getName());
 
@@ -76,7 +78,7 @@ public class TrustCommand {
         return true;
     }
 
-    public boolean handleUntrust(Player player, String[] args) {
+    private boolean handleUntrust(Player player, String[] args) {
         if (args.length < 2) {
             player.sendMessage("§c[LandClaims] Usage: /lc untrust <player>");
             return true;
@@ -96,7 +98,7 @@ public class TrustCommand {
 
         @SuppressWarnings("deprecation")
         OfflinePlayer target = Bukkit.getOfflinePlayer(args[1]);
-        if (target == null || !target.hasPlayedBefore()) {
+        if (!target.hasPlayedBefore() && !target.isOnline()) {
             player.sendMessage("§c[LandClaims] Player not found.");
             return true;
         }
@@ -107,7 +109,9 @@ public class TrustCommand {
         }
 
         claim.setTrust(target.getUniqueId(), null); // Remove trust
-        plugin.getDataManager().saveClaim(claim);
+
+        // Use the new specific update method
+        plugin.getDatabaseManager().updateClaimTrustedPlayers(claim);
 
         player.sendMessage("§a[LandClaims] Removed trust for " + target.getName());
 
@@ -119,4 +123,5 @@ public class TrustCommand {
 
         return true;
     }
+
 }

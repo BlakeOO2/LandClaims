@@ -23,12 +23,14 @@ public enum ClaimFlag {
     TRUSTED_DOORS(true),
     TRUSTED_BUILD(true),
     TRUSTED_VILLAGER_TRADING(true),  // Added
+    TRUSTED_INTERACTIVE(true),
 
     // Untrusted player flags
     UNTRUSTED_CONTAINERS(false),
     UNTRUSTED_DOORS(false),
     UNTRUSTED_BUILD(false),
-    UNTRUSTED_VILLAGER_TRADING(false);  // Added
+    UNTRUSTED_VILLAGER_TRADING(false),  // Added
+    UNTRUSTED_INTERACTIVE(false);
 
     private final boolean defaultValue;
 

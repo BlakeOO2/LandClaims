@@ -41,6 +41,11 @@ public class SelectionManager {
         int requiredBlocks = calculateRequiredBlocks(selection);
         int availableBlocks = plugin.getClaimManager().getPlayerAvailableBlocks(player.getUniqueId());
 
+        // Debug logging
+        plugin.getLogger().info("[Debug] Player " + player.getName() + " attempting to create claim:");
+        plugin.getLogger().info("[Debug] Required blocks: " + requiredBlocks);
+        plugin.getLogger().info("[Debug] Available blocks: " + availableBlocks);
+
         if (requiredBlocks > availableBlocks) {
             player.sendMessage("§c[LandClaims] You need " + requiredBlocks + " blocks to create this claim, but you only have " + availableBlocks + ".");
             clearSelection(player);
@@ -54,14 +59,33 @@ public class SelectionManager {
             return;
         }
 
-        // Create and save the claim
+        // Create the claim
         Claim claim = new Claim(player.getUniqueId(), selection.getFirstPoint(), selection.getSecondPoint());
 
+        // Debug logging before save
+        plugin.getLogger().info("[Debug] Creating new claim for " + player.getName() +
+                " at " + claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
+        plugin.getLogger().info("[Debug] Current cache size: " +
+                plugin.getClaimManager().getPlayerClaims(player.getUniqueId()).size());
+
         // Save to database first
-        plugin.getDatabaseManager().saveClaim(claim);
+        try {
+            plugin.getDatabaseManager().saveClaim(claim);
+            plugin.getLogger().info("[Debug] Claim saved to database successfully");
+        } catch (Exception e) {
+            plugin.getLogger().severe("[Debug] Failed to save claim to database: " + e.getMessage());
+            e.printStackTrace();
+            player.sendMessage("§c[LandClaims] Error saving claim. Please contact an administrator.");
+            clearSelection(player);
+            return;
+        }
 
         // Then add to cache
         plugin.getClaimManager().addClaim(claim);
+
+        // Debug logging after save
+        plugin.getLogger().info("[Debug] Cache size after adding: " +
+                plugin.getClaimManager().getPlayerClaims(player.getUniqueId()).size());
 
         // Remove blocks from player's balance
         plugin.getBlockAccumulator().removeBlocks(player.getUniqueId(), requiredBlocks);
@@ -69,9 +93,25 @@ public class SelectionManager {
         // Show visualization
         plugin.getClaimVisualizer().showClaim(player, claim);
 
+        // Verify claim was added correctly
+        if (plugin.getClaimManager().getClaimAt(claim.getCorner1()) == null) {
+            plugin.getLogger().severe("[Debug] Claim was not properly added to cache! Cannot find claim at location.");
+        }
+
+        // Debug cache state
+        plugin.getLogger().info("=== Cache State After Claim Creation ===");
+        plugin.getLogger().info("Total claims for " + player.getName() + ": " +
+                plugin.getClaimManager().getPlayerClaims(player.getUniqueId()).size());
+        plugin.getLogger().info("Claim findable at location: " +
+                (plugin.getClaimManager().getClaimAt(claim.getCorner1()) != null));
+
         player.sendMessage("§a[LandClaims] Claim created successfully! Size: " + requiredBlocks + " blocks");
         clearSelection(player);
+
+        // Force a cache refresh
+        plugin.getClaimManager().refreshCache();
     }
+
 
     public void handleAdminFirstPoint(Player admin, Location location) {
         if (!admin.hasPermission("landclaims.admin")) {
