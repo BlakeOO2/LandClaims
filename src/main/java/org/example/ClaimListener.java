@@ -115,6 +115,12 @@ public class ClaimListener implements Listener {
             return;
         }
 
+// Check if player has notifications enabled
+        PlayerPreferences prefs = plugin.getPlayerPreferences(player.getUniqueId());
+        if (!prefs.isNotificationsEnabled()) {
+            return;
+        }
+
         // Check if player has notifications enabled
         if (!player.hasPermission("landclaims.notifications")) {
             return;

@@ -58,3 +58,7 @@ permissions:
     description: Allows access to memory diagnostics
     default: op
 
+  landclaims.admin.transfer:
+    description: Allows transferring ownership of claims
+    default: op
+

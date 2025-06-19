@@ -4,6 +4,7 @@ package org.example;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.inventory.ItemStack;
@@ -94,6 +95,8 @@ public class AdminCommand {
                 }
                 return handleAdminUnclaim((Player) sender);
             // In AdminCommand.java
+            case "transfer":
+                return handleAdminTransfer(sender, args);
             case "memory":
                 if (args.length < 3) {
                     return handleMemoryCommand(sender);
@@ -141,6 +144,69 @@ public class AdminCommand {
         }
     }
 
+
+    private boolean handleAdminTransfer(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("§c[LandClaims] This command can only be used by players.");
+            return true;
+        }
+
+        Player admin = (Player) sender;
+
+        if (!admin.hasPermission("landclaims.admin.transfer")) {
+            admin.sendMessage("§c[LandClaims] You don't have permission to use this command.");
+            return true;
+        }
+
+        if (args.length < 3) {
+            admin.sendMessage("§c[LandClaims] Usage: /lc admin transfer <player>");
+            return true;
+        }
+
+        // Get the claim they're standing in
+        Claim claim = plugin.getClaimManager().getClaimAt(admin.getLocation());
+        if (claim == null) {
+            admin.sendMessage("§c[LandClaims] You must be standing in a claim to transfer it.");
+            return true;
+        }
+
+        // Get the target player
+        String targetName = args[2];
+        OfflinePlayer target;
+
+        if (targetName.equalsIgnoreCase("me")) {
+            target = admin;
+        } else {
+            target = Bukkit.getOfflinePlayer(targetName);
+            if (!target.hasPlayedBefore() && !target.isOnline()) {
+                admin.sendMessage("§c[LandClaims] Player not found: " + targetName);
+                return true;
+            }
+        }
+
+        // Store old owner for message
+        UUID oldOwner = claim.getOwner();
+        String oldOwnerName = Bukkit.getOfflinePlayer(oldOwner).getName();
+
+        // Update claim ownership
+        claim.setOwner(target.getUniqueId());
+
+        // Update in database
+        plugin.getDatabaseManager().transferClaim(claim, target.getUniqueId());
+
+        // Update cache
+        plugin.getClaimManager().refreshCache();
+
+        admin.sendMessage("§a[LandClaims] Successfully transferred claim from " +
+                oldOwnerName + " to " + target.getName() + ".");
+
+        // Notify the new owner if they're online
+        if (target.isOnline() && !target.equals(admin)) {
+            target.getPlayer().sendMessage("§a[LandClaims] An admin has transferred a claim to you.");
+        }
+
+        return true;
+    }
     private boolean handleMemoryCommand(CommandSender sender) {
         if (!sender.hasPermission("landclaims.admin.memory")) {
             sender.sendMessage("§cYou don't have permission to use this command.");
@@ -578,6 +644,8 @@ public class AdminCommand {
         admin.sendMessage("§f/lc admin unclaimadmin §7- Remove an admin claim");
         admin.sendMessage("§f/lc admin bypass §7- Toggle admin bypass mode");
         admin.sendMessage("§f/lc admin reload §7- Reload configuration");
+        admin.sendMessage("§f/lc admin memory §7- View memory diagnostics and cleanup options");
+        admin.sendMessage("§f/lc admin transfer <player> §7- Transfer claim ownership");
         admin.sendMessage("§f/lc admin database §7- Database management commands");
         admin.sendMessage("§f/lc admin bluemap reload §7- Reload BlueMap markers");
         admin.sendMessage("§f/lc admin bluemap toggle §7- Toggle BlueMap integration");
@@ -593,6 +661,8 @@ public class AdminCommand {
         sender.sendMessage("§f/lc admin menu §7- Open claim management for current claim");
         sender.sendMessage("§f/lc admin delete §7- Delete the claim you're standing in");
         sender.sendMessage("§f/lc admin unclaimuser §7- Remove a useres claim");
+
+        sender.sendMessage("§f/lc admin memory §7- View memory diagnostics and cleanup options");
         sender.sendMessage("§f/lc admin unclaimadmin §7- Remove an admin claim");
         sender.sendMessage("§f/lc admin bypass §7- Toggle admin bypass mode");
         sender.sendMessage("§f/lc admin reload §7- Reload configuration");

@@ -1,14 +1,19 @@
 package org.example;
 
+import org.bukkit.*;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public class LandClaimsCommand implements CommandExecutor {
     private final Main plugin;
+    private final Map<UUID, Long> trapCooldowns = new HashMap<>();
+    private static final long TRAP_COOLDOWN_SECONDS = 300; // 5 minutes
 
     public LandClaimsCommand(Main plugin) {
         this.plugin = plugin;
@@ -117,6 +122,14 @@ public class LandClaimsCommand implements CommandExecutor {
                     return plugin.getWorldSettingsCommand().handleCommand(sender, args);
                 case "unclaim":
                     handleUnclaim(player);
+                    return true;
+                case "trapped":
+                case "trap":
+                    handleTrappedCommand(player);
+                    return true;
+                case "notifications":
+                case "notify":
+                    toggleNotifications(player);
                     return true;
                 case "info":
                     plugin.getClaimInfoCommand().handleInfo(player);
@@ -277,6 +290,153 @@ public class LandClaimsCommand implements CommandExecutor {
         return true;
     }
 
+    private void handleTrappedCommand(Player player) {
+        // Check if player is in a claim
+        Claim claim = plugin.getClaimManager().getClaimAt(player.getLocation());
+        if (claim == null) {
+            player.sendMessage("§c[LandClaims] You are not inside a claim.");
+            return;
+        }
+
+        // Check if player is in their own claim
+        if (claim.getOwner().equals(player.getUniqueId())) {
+            player.sendMessage("§c[LandClaims] You cannot use this command in your own claim.");
+            return;
+        }
+
+        // Check cooldown (optional)
+        if (isOnCooldown(player)) {
+            player.sendMessage("§c[LandClaims] You must wait before using this command again.");
+            return;
+        }
+
+        // Find safe location outside the claim
+        Location safeLoc = findSafeLocationOutsideClaim(player.getLocation(), claim);
+        if (safeLoc == null) {
+            player.sendMessage("§c[LandClaims] Could not find a safe location outside the claim. Please try again or contact an admin.");
+            return;
+        }
+
+        // Teleport player
+        player.teleport(safeLoc);
+        player.sendMessage("§a[LandClaims] You have been teleported outside the claim.");
+
+        // Set cooldown (optional)
+        setCooldown(player);
+    }
+
+    private boolean isOnCooldown(Player player) {
+        if (!trapCooldowns.containsKey(player.getUniqueId())) {
+            return false;
+        }
+
+        long lastUsed = trapCooldowns.get(player.getUniqueId());
+        long cooldownTime = TRAP_COOLDOWN_SECONDS * 1000; // Convert to milliseconds
+        long timeRemaining = (lastUsed + cooldownTime) - System.currentTimeMillis();
+
+        if (timeRemaining <= 0) {
+            return false;
+        } else {
+            long secondsRemaining = timeRemaining / 1000;
+            player.sendMessage("§c[LandClaims] You must wait " + secondsRemaining + " seconds before using this command again.");
+            return true;
+        }
+    }
+
+    private void setCooldown(Player player) {
+        trapCooldowns.put(player.getUniqueId(), System.currentTimeMillis());
+    }
+
+    private Location findSafeLocationOutsideClaim(Location playerLoc, Claim claim) {
+        World world = playerLoc.getWorld();
+
+        // Get claim boundaries
+        int minX = Math.min(claim.getCorner1().getBlockX(), claim.getCorner2().getBlockX());
+        int maxX = Math.max(claim.getCorner1().getBlockX(), claim.getCorner2().getBlockX());
+        int minZ = Math.min(claim.getCorner1().getBlockZ(), claim.getCorner2().getBlockZ());
+        int maxZ = Math.max(claim.getCorner1().getBlockZ(), claim.getCorner2().getBlockZ());
+
+        // Player's current position
+        int playerX = playerLoc.getBlockX();
+        int playerZ = playerLoc.getBlockZ();
+
+        // Determine which edge is closest
+        int distToWest = playerX - minX;
+        int distToEast = maxX - playerX;
+        int distToNorth = playerZ - minZ;
+        int distToSouth = maxZ - playerZ;
+
+        // Find the minimum distance
+        int minDist = Math.min(Math.min(distToWest, distToEast), Math.min(distToNorth, distToSouth));
+
+        // Try the closest edge first
+        Location safeLoc = null;
+        if (minDist == distToWest) {
+            safeLoc = findSafeY(world, minX - 3, playerZ); // 3 blocks outside west edge
+        } else if (minDist == distToEast) {
+            safeLoc = findSafeY(world, maxX + 3, playerZ); // 3 blocks outside east edge
+        } else if (minDist == distToNorth) {
+            safeLoc = findSafeY(world, playerX, minZ - 3); // 3 blocks outside north edge
+        } else {
+            safeLoc = findSafeY(world, playerX, maxZ + 3); // 3 blocks outside south edge
+        }
+
+        // If we couldn't find a safe location at the closest edge, try other edges
+        if (safeLoc == null) {
+            if (minDist != distToWest) safeLoc = findSafeY(world, minX - 3, playerZ);
+            if (safeLoc == null && minDist != distToEast) safeLoc = findSafeY(world, maxX + 3, playerZ);
+            if (safeLoc == null && minDist != distToNorth) safeLoc = findSafeY(world, playerX, minZ - 3);
+            if (safeLoc == null && minDist != distToSouth) safeLoc = findSafeY(world, playerX, maxZ + 3);
+        }
+
+        // If still no safe location, try corners
+        if (safeLoc == null) {
+            safeLoc = findSafeY(world, minX - 3, minZ - 3); // Northwest corner
+            if (safeLoc == null) safeLoc = findSafeY(world, maxX + 3, minZ - 3); // Northeast corner
+            if (safeLoc == null) safeLoc = findSafeY(world, minX - 3, maxZ + 3); // Southwest corner
+            if (safeLoc == null) safeLoc = findSafeY(world, maxX + 3, maxZ + 3); // Southeast corner
+        }
+
+        return safeLoc;
+    }
+
+    private Location findSafeY(World world, int x, int z) {
+        // Start from the player's Y level and work down
+        int startY = Math.min(world.getMaxHeight() - 10, Math.max(world.getMinHeight() + 10, 100));
+
+        // Check from startY down to bedrock
+        for (int y = startY; y > world.getMinHeight() + 1; y--) {
+            Location loc = new Location(world, x + 0.5, y, z + 0.5);
+            Location below = loc.clone().subtract(0, 1, 0);
+            Location above = loc.clone().add(0, 1, 0);
+
+            // Check if we have a solid block below and air above
+            if (below.getBlock().getType().isSolid() &&
+                    !isHazardous(below.getBlock().getType()) &&
+                    loc.getBlock().getType().isAir() &&
+                    above.getBlock().getType().isAir()) {
+
+                // Make sure this location is actually outside the claim
+                if (plugin.getClaimManager().getClaimAt(loc) == null) {
+                    return loc;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isHazardous(Material material) {
+        return material.name().contains("LAVA") ||
+                material.name().contains("FIRE") ||
+                material.name().contains("CACTUS") ||
+                material.name().contains("MAGMA") ||
+                material.name().contains("POWDER_SNOW") ||
+                material.name().contains("CAMPFIRE") ||
+                material.name().contains("SWEET_BERRY_BUSH");
+    }
+
+
     private boolean handleUntrust(Player player, String[] args) {
         if (args.length < 2) {
             player.sendMessage("§c[LandClaims] Usage: /lc untrust <player>");
@@ -362,11 +522,28 @@ public class LandClaimsCommand implements CommandExecutor {
         player.sendMessage("§f/lc unclaim §7- Unclaim your current claim");
         player.sendMessage("§f/lc info §7- View claim information");
         player.sendMessage("§f/lc transfer <player> §7- Transfer claim ownership");
+        player.sendMessage("§f/lc notifications §7- Toggle claim entry/exit messages");
         player.sendMessage("§f/lc stats §7- View claim statistics");
-        player.sendMessage("§f/lc modify §7- Modify your claim's boundaries");
+        player.sendMessage("§f/lc trapped §7- Teleport out if you're stuck in someone's claim");
+        //player.sendMessage("§f/lc modify §7- Modify your claim's boundaries");
+
         if (player.hasPermission("landclaims.admin")) {
             player.sendMessage("§f/lc admin §7- View admin commands");
         }
+    }
+
+    private void toggleNotifications(Player player) {
+        PlayerPreferences prefs = plugin.getPlayerPreferences(player.getUniqueId());
+        prefs.toggleNotifications();
+
+        if (prefs.isNotificationsEnabled()) {
+            player.sendMessage("§a[LandClaims] Claim notifications enabled.");
+        } else {
+            player.sendMessage("§c[LandClaims] Claim notifications disabled.");
+        }
+
+        // Save preferences
+        plugin.savePlayerPreferences();
     }
 
     private void handleUnclaim(Player player) {

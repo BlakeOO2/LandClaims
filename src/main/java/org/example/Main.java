@@ -3,6 +3,7 @@ package org.example;
 
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -10,6 +11,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
 
+import java.io.IOException;
 import java.util.*;
 
 import org.bukkit.plugin.java.JavaPlugin;
@@ -53,6 +55,7 @@ public class Main extends JavaPlugin {
     private final Map<UUID, Boolean> flightStates = new HashMap<>();
     private final Map<UUID, Long> lastFlightMessage = new HashMap<>();
     private static final long FLIGHT_MESSAGE_COOLDOWN = 20000;
+    private final Map<UUID, PlayerPreferences> playerPreferences = new HashMap<>();
 
 
     @Override
@@ -78,6 +81,7 @@ public class Main extends JavaPlugin {
             }
 
             // Initialize managers - but don't load from YAML
+            loadPlayerPreferences();
             initializeManagers();
 
             // Load claims from database only
@@ -383,6 +387,7 @@ public class Main extends JavaPlugin {
                 getLogger().info("Saving block accumulator data...");
                 blockAccumulator.saveData();
             }
+            savePlayerPreferences();
 
 
 
@@ -420,6 +425,44 @@ public class Main extends JavaPlugin {
             }
         }
         return count;
+    }
+
+    public PlayerPreferences getPlayerPreferences(UUID playerUUID) {
+        return playerPreferences.computeIfAbsent(playerUUID, uuid -> new PlayerPreferences());
+    }
+
+    public void savePlayerPreferences() {
+        File prefsFile = new File(getDataFolder(), "player_preferences.yml");
+        YamlConfiguration config = new YamlConfiguration();
+
+        for (Map.Entry<UUID, PlayerPreferences> entry : playerPreferences.entrySet()) {
+            String path = entry.getKey().toString();
+            config.set(path + ".notifications", entry.getValue().isNotificationsEnabled());
+        }
+
+        try {
+            config.save(prefsFile);
+        } catch (IOException e) {
+            getLogger().severe("Could not save player preferences: " + e.getMessage());
+        }
+    }
+
+    public void loadPlayerPreferences() {
+        File prefsFile = new File(getDataFolder(), "player_preferences.yml");
+        if (!prefsFile.exists()) return;
+
+        YamlConfiguration config = YamlConfiguration.loadConfiguration(prefsFile);
+
+        for (String uuidString : config.getKeys(false)) {
+            try {
+                UUID uuid = UUID.fromString(uuidString);
+                PlayerPreferences prefs = new PlayerPreferences();
+                prefs.setNotificationsEnabled(config.getBoolean(uuidString + ".notifications", true));
+                playerPreferences.put(uuid, prefs);
+            } catch (IllegalArgumentException e) {
+                getLogger().warning("Invalid UUID in preferences: " + uuidString);
+            }
+        }
     }
 
     public int cleanupPendingActions() {
