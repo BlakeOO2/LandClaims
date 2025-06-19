@@ -155,6 +155,30 @@ public class ProtectionManager {
                 type == Material.TARGET;
     }
 
+    public boolean canInteractWithEntity(Player player, Entity entity) {
+        Claim claim = plugin.getClaimManager().getClaimAt(entity.getLocation());
+        if (claim == null) return true;
+
+        // Owner always has access
+        if (claim.getOwner().equals(player.getUniqueId())) return true;
+
+        // Admin bypass
+        if (player.hasPermission("landclaims.admin") &&
+                plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+            return true;
+        }
+
+        boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+        return isTrusted ?
+                claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
+                claim.getFlag(ClaimFlag.UNTRUSTED_INTERACTIVE);
+    }
+
+    public boolean canDamageEntity(Player player, Entity entity) {
+        // For most entities, use the same logic as interaction
+        return canInteractWithEntity(player, entity);
+    }
+
     public boolean canInteract(Player player, Block block) {
         // Skip if using claiming tool
         if (player.getInventory().getItemInMainHand().getType() == Material.GOLDEN_SHOVEL) {

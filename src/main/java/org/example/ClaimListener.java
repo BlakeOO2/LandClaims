@@ -487,6 +487,120 @@ public class ClaimListener implements Listener {
 
 
 
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onEntityInteract(org.bukkit.event.player.PlayerInteractEntityEvent event) {
+        Player player = event.getPlayer();
+        Entity entity = event.getRightClicked();
+
+        // Skip if using claiming tool
+        if (player.getInventory().getItemInMainHand().getType() == Material.GOLDEN_SHOVEL) {
+            return;
+        }
+
+        // Check for item frames, armor stands, and other interactable entities
+        if (entity instanceof ItemFrame || entity instanceof ArmorStand) {
+            Claim claim = plugin.getClaimManager().getClaimAt(entity.getLocation());
+            if (claim == null) return;
+
+            // Owner always has access
+            if (claim.getOwner().equals(player.getUniqueId())) return;
+
+            // Admin bypass
+            if (player.hasPermission("landclaims.admin") &&
+                    plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                return;
+            }
+
+            boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+            boolean allowed = isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_INTERACTIVE);
+
+            if (!allowed) {
+                event.setCancelled(true);
+                player.sendMessage("§c[LandClaims] You don't have permission to interact with this.");
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onEntityDamage(org.bukkit.event.entity.EntityDamageByEntityEvent event) {
+        // Skip if the damaged entity is a player (PvP is handled elsewhere)
+        if (event.getEntity() instanceof Player) {
+            return;
+        }
+
+        // Get the attacker
+        Player attacker = null;
+        if (event.getDamager() instanceof Player) {
+            attacker = (Player) event.getDamager();
+        } else if (event.getDamager() instanceof Projectile) {
+            Projectile projectile = (Projectile) event.getDamager();
+            if (projectile.getShooter() instanceof Player) {
+                attacker = (Player) projectile.getShooter();
+            }
+        }
+
+        if (attacker == null) {
+            return; // Not caused by a player
+        }
+
+        // Check claim permissions
+        Claim claim = plugin.getClaimManager().getClaimAt(event.getEntity().getLocation());
+        if (claim == null) return;
+
+        // Owner always has access
+        if (claim.getOwner().equals(attacker.getUniqueId())) return;
+
+        // Admin bypass
+        if (attacker.hasPermission("landclaims.admin") &&
+                plugin.getClaimManager().isAdminBypassing(attacker.getUniqueId())) {
+            return;
+        }
+
+        boolean isTrusted = claim.getTrustLevel(attacker.getUniqueId()) != null;
+        boolean allowed = isTrusted ?
+                claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
+                claim.getFlag(ClaimFlag.UNTRUSTED_INTERACTIVE);
+
+        if (!allowed) {
+            event.setCancelled(true);
+            attacker.sendMessage("§c[LandClaims] You don't have permission to damage entities here.");
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onDragonEggInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) {
+            return;
+        }
+
+        if (event.getClickedBlock().getType() == Material.DRAGON_EGG) {
+            Player player = event.getPlayer();
+            Claim claim = plugin.getClaimManager().getClaimAt(event.getClickedBlock().getLocation());
+
+            if (claim == null) return;
+
+            // Owner always has access
+            if (claim.getOwner().equals(player.getUniqueId())) return;
+
+            // Admin bypass
+            if (player.hasPermission("landclaims.admin") &&
+                    plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                return;
+            }
+
+            boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+            boolean allowed = isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_INTERACTIVE);
+
+            if (!allowed) {
+                event.setCancelled(true);
+                player.sendMessage("§c[LandClaims] You don't have permission to interact with the dragon egg here.");
+            }
+        }
+    }
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onEntityDamageByEntity(org.bukkit.event.entity.EntityDamageByEntityEvent event) {
