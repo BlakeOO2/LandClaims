@@ -54,4 +54,7 @@ permissions:
   landclaims.adminland.fly:
     description: Allows players to fly in admin claims
     default: op
+  landclaims.admin.memory:
+    description: Allows access to memory diagnostics
+    default: op
 

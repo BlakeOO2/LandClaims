@@ -1,6 +1,7 @@
 // Main.java
 package org.example;
 
+import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -403,6 +404,37 @@ public class Main extends JavaPlugin {
     public static Main getInstance() {
         return instance;
     }
+
+    public int getFlightStatesCount() {
+        return flightStates.size();
+    }
+
+    public int cleanupFlightStates() {
+        int count = 0;
+        Iterator<Map.Entry<UUID, Boolean>> it = flightStates.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Boolean> entry = it.next();
+            if (Bukkit.getPlayer(entry.getKey()) == null) {
+                it.remove();
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int cleanupPendingActions() {
+        int count = 0;
+        Iterator<Map.Entry<UUID, Runnable>> it = pendingActions.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Runnable> entry = it.next();
+            if (Bukkit.getPlayer(entry.getKey()) == null) {
+                it.remove();
+                count++;
+            }
+        }
+        return count;
+    }
+
 
     public ClaimManager getClaimManager() {
         return claimManager;

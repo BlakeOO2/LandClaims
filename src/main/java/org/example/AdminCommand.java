@@ -94,6 +94,18 @@ public class AdminCommand {
                 }
                 return handleAdminUnclaim((Player) sender);
             // In AdminCommand.java
+            case "memory":
+                if (args.length < 3) {
+                    return handleMemoryCommand(sender);
+                }
+                switch (args[2].toLowerCase()) {
+                    case "gc":
+                        return handleMemoryGC(sender);
+                    case "cleanup":
+                        return handleMemoryCleanup(sender);
+                    default:
+                        return handleMemoryCommand(sender);
+                }
             case "bluemap":
                 if (args.length < 3) {
                     sender.sendMessage("§cUsage: /lc admin bluemap <reload|toggle|status>");
@@ -128,6 +140,144 @@ public class AdminCommand {
                 return true;
         }
     }
+
+    private boolean handleMemoryCommand(CommandSender sender) {
+        if (!sender.hasPermission("landclaims.admin.memory")) {
+            sender.sendMessage("§cYou don't have permission to use this command.");
+            return true;
+        }
+
+        sender.sendMessage("§6=== LandClaims Memory Diagnostics ===");
+
+        // JVM Memory Stats
+        Runtime runtime = Runtime.getRuntime();
+        long totalMemory = runtime.totalMemory() / (1024 * 1024);
+        long freeMemory = runtime.freeMemory() / (1024 * 1024);
+        long usedMemory = totalMemory - freeMemory;
+        long maxMemory = runtime.maxMemory() / (1024 * 1024);
+
+        sender.sendMessage("§7JVM Memory: §e" + usedMemory + "MB §7/ §e" + totalMemory + "MB §7(Max: §e" + maxMemory + "MB§7)");
+
+        // Plugin-specific memory usage estimates
+        sender.sendMessage("§6=== Cache Sizes ===");
+
+        // ClaimManager caches
+        int playerClaimsSize = plugin.getClaimManager().getAllClaims().size();
+        sender.sendMessage("§7Total Claims: §e" + playerClaimsSize);
+
+        // Selection Manager
+        int activeSelections = getActiveSelectionsCount();
+        sender.sendMessage("§7Active Selections: §e" + activeSelections);
+
+        // GUI Menus
+        int openMenus = getOpenMenusCount();
+        sender.sendMessage("§7Open Menus: §e" + openMenus);
+
+        // Pending Actions
+        int pendingActions = plugin.getPendingActions().size();
+        sender.sendMessage("§7Pending Actions: §e" + pendingActions);
+
+        // Flight States
+        int flightStates = getFlightStatesCount();
+        sender.sendMessage("§7Flight States: §e" + flightStates);
+
+        // Database Connection Status
+        boolean dbHealthy = plugin.getDatabaseManager().isDatabaseHealthy();
+        sender.sendMessage("§7Database Connection: " + (dbHealthy ? "§aHealthy" : "§cUnhealthy"));
+
+        // Scheduled Tasks
+        int scheduledTasks = Bukkit.getScheduler().getPendingTasks().stream()
+                .filter(task -> task.getOwner().equals(plugin))
+                .toList().size();
+        sender.sendMessage("§7Active Scheduled Tasks: §e" + scheduledTasks);
+
+        // Garbage Collection
+        sender.sendMessage("§6=== Actions ===");
+        sender.sendMessage("§7Type §e/lc admin memory gc §7to request garbage collection");
+        sender.sendMessage("§7Type §e/lc admin memory cleanup §7to clean up caches");
+
+        return true;
+    }
+
+    private boolean handleMemoryGC(CommandSender sender) {
+        sender.sendMessage("§6[LandClaims] Requesting garbage collection...");
+        System.gc();
+        sender.sendMessage("§a[LandClaims] Garbage collection requested.");
+        return true;
+    }
+
+    private boolean handleMemoryCleanup(CommandSender sender) {
+        sender.sendMessage("§6[LandClaims] Cleaning up caches...");
+
+        // Clean up selections
+        int selectionsCleaned = cleanupSelections();
+
+        // Clean up menus
+        int menusCleaned = cleanupMenus();
+
+        // Clean up pending actions
+        int actionsCleaned = cleanupPendingActions();
+
+        // Clean up flight states for offline players
+        int flightStatesCleaned = cleanupFlightStates();
+
+        sender.sendMessage("§a[LandClaims] Cleanup complete:");
+        sender.sendMessage("§7- Selections cleaned: §e" + selectionsCleaned);
+        sender.sendMessage("§7- Menus cleaned: §e" + menusCleaned);
+        sender.sendMessage("§7- Actions cleaned: §e" + actionsCleaned);
+        sender.sendMessage("§7- Flight states cleaned: §e" + flightStatesCleaned);
+
+        return true;
+    }
+
+    private int getActiveSelectionsCount() {
+        // You'll need to add a method in SelectionManager to get the size
+        return plugin.getSelectionManager().getSelectionsCount();
+    }
+
+    private int getOpenMenusCount() {
+        // Sum of all open menus across GUIs
+        int count = 0;
+        count += plugin.getMainClaimGui().getOpenMenusCount();
+        count += plugin.getTrustGui().getOpenMenusCount();
+        count += plugin.getFlagGui().getOpenMenusCount();
+        count += plugin.getClaimSettingsGui().getOpenMenusCount();
+        count += plugin.getAdminMenuGui().getOpenMenusCount();
+        return count;
+    }
+
+    private int getFlightStatesCount() {
+        // You'll need to add a method in Main to get the size
+        return plugin.getFlightStatesCount();
+    }
+
+    private int cleanupSelections() {
+        // Remove selections for offline players
+        return plugin.getSelectionManager().cleanupOfflineSelections();
+    }
+
+    private int cleanupMenus() {
+        // Close menus for offline players
+        int count = 0;
+        count += plugin.getMainClaimGui().cleanupOfflineMenus();
+        count += plugin.getTrustGui().cleanupOfflineMenus();
+        count += plugin.getFlagGui().cleanupOfflineMenus();
+        count += plugin.getClaimSettingsGui().cleanupOfflineMenus();
+        count += plugin.getAdminMenuGui().cleanupOfflineMenus();
+        return count;
+    }
+
+    private int cleanupPendingActions() {
+        // Remove pending actions for offline players
+        return plugin.cleanupPendingActions();
+    }
+
+    private int cleanupFlightStates() {
+        // Remove flight states for offline players
+        return plugin.cleanupFlightStates();
+    }
+
+
     // In AdminCommand.java
     private boolean handleDatabaseCommand(CommandSender sender, String[] args) {
         if (args.length < 3) {

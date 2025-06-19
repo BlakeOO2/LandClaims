@@ -81,6 +81,24 @@ public class AdminMenuGUI {
         admin.openInventory(inv);
     }
 
+    public int getOpenMenusCount() {
+        return openMenus.size();
+    }
+
+    public int cleanupOfflineMenus() {
+        int count = 0;
+        Iterator<Map.Entry<UUID, Claim>> it = openMenus.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Claim> entry = it.next();
+            if (Bukkit.getPlayer(entry.getKey()) == null) {
+                it.remove();
+                count++;
+            }
+        }
+        return count;
+    }
+
+
     public void openAllClaimsList(Player admin, int page) {
         List<Claim> allClaims = new ArrayList<>(plugin.getClaimManager().getAllClaims());
         int totalPages = (int) Math.ceil(allClaims.size() / (double) ITEMS_PER_PAGE);

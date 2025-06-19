@@ -45,6 +45,8 @@ public class GlobalFlagsGUI {
         );
     }
 
+
+
     private String formatFlagName(ClaimFlag flag) {
         return formatFlagName(flag.name()); // Call the existing string formatter with the flag name
     }

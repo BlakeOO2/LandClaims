@@ -73,6 +73,24 @@ public class ClaimSettingsGUI {
         player.openInventory(inv);
     }
 
+    public int getOpenMenusCount() {
+        return openMenus.size();
+    }
+
+    public int cleanupOfflineMenus() {
+        int count = 0;
+        Iterator<Map.Entry<UUID, Claim>> it = openMenus.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Claim> entry = it.next();
+            if (Bukkit.getPlayer(entry.getKey()) == null) {
+                it.remove();
+                count++;
+            }
+        }
+        return count;
+    }
+
+
     private void addToggleItem(Inventory inv, int slot, Material material, String name, boolean enabled) {
         List<String> lore = new ArrayList<>();
         lore.add(enabled ? "§aEnabled" : "§cDisabled");

@@ -1,12 +1,14 @@
 // SelectionManager.java
 package org.example;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
 
@@ -111,6 +113,24 @@ public class SelectionManager {
         // Force a cache refresh
         plugin.getClaimManager().refreshCache();
     }
+
+    public int getSelectionsCount() {
+        return selections.size();
+    }
+
+    public int cleanupOfflineSelections() {
+        int count = 0;
+        Iterator<Map.Entry<UUID, Selection>> it = selections.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Selection> entry = it.next();
+            if (Bukkit.getPlayer(entry.getKey()) == null) {
+                it.remove();
+                count++;
+            }
+        }
+        return count;
+    }
+
 
 
     public void handleAdminFirstPoint(Player admin, Location location) {

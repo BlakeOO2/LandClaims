@@ -178,6 +178,24 @@ public class MainClaimGUI {
         }
     }
 
+    public int getOpenMenusCount() {
+        return openMenus.size();
+    }
+
+    public int cleanupOfflineMenus() {
+        int count = 0;
+        Iterator<Map.Entry<UUID, Claim>> it = openMenus.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Claim> entry = it.next();
+            if (Bukkit.getPlayer(entry.getKey()) == null) {
+                it.remove();
+                count++;
+            }
+        }
+        return count;
+    }
+
+
 
     private String formatLocation(Location loc) {
         return loc.getBlockX() + ", " + loc.getBlockZ();
