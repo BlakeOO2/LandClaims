@@ -56,7 +56,7 @@ public class Main extends JavaPlugin {
     private final Map<UUID, Long> lastFlightMessage = new HashMap<>();
     private static final long FLIGHT_MESSAGE_COOLDOWN = 20000;
     private final Map<UUID, PlayerPreferences> playerPreferences = new HashMap<>();
-
+    private final Map<UUID, Long> endermanBlockPickupTimes = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -86,6 +86,12 @@ public class Main extends JavaPlugin {
 
             // Load claims from database only
             claimManager.loadClaimsFromDatabase();
+
+            Bukkit.getScheduler().runTaskTimer(this, () -> {
+                // Remove entries older than 30 minutes
+                long oldThreshold = System.currentTimeMillis() - (30 * 60 * 1000);
+                endermanBlockPickupTimes.entrySet().removeIf(entry -> entry.getValue() < oldThreshold);
+            }, 12000L, 12000L); // Run every 10 minutes (12000 ticks)
 
             // Register events with error handling
             try {
@@ -211,6 +217,14 @@ public class Main extends JavaPlugin {
 
     public void setDatabaseMigrated(boolean migrated) {
         this.databaseMigrated = migrated;
+    }
+
+    public void trackEndermanPickup(UUID endermanUUID) {
+        endermanBlockPickupTimes.put(endermanUUID, System.currentTimeMillis());
+    }
+
+    public Map<UUID, Long> getEndermanBlockPickupTimes() {
+        return endermanBlockPickupTimes;
     }
 
     private void initializeManagers() {

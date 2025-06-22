@@ -1,5 +1,5 @@
 name: LandClaims
-version: 1.1.14.6
+version: 1.1.14.7
 main: org.example.Main
 api-version: 1.21
 softdepend: [BlueMap, ChestShop]
@@ -62,3 +62,6 @@ permissions:
     description: Allows transferring ownership of claims
     default: op
 
+  landclaims.admin.killendermen:
+    description: Allows killing endermen that have been holding blocks for too long
+    default: op

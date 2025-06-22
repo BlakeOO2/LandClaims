@@ -1,10 +1,10 @@
 // AdminCommand.java
 package org.example;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
+import org.bukkit.*;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.entity.Enderman;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.command.CommandSender;
 import org.bukkit.inventory.ItemStack;
@@ -88,6 +88,9 @@ public class AdminCommand {
                 return handleUnclaim((Player) sender);
             case "importdata":
                 return handleImportData(sender);
+            case "killermen":
+            case "killendermen":
+                return handleKillEndermen(sender);
             case "unclaimadmin":
                 if (!(sender instanceof Player)) {
                     sender.sendMessage("§cThis command can only be used by players.");
@@ -644,6 +647,8 @@ public class AdminCommand {
         admin.sendMessage("§f/lc admin unclaimadmin §7- Remove an admin claim");
         admin.sendMessage("§f/lc admin bypass §7- Toggle admin bypass mode");
         admin.sendMessage("§f/lc admin reload §7- Reload configuration");
+
+        admin.sendMessage("§f/lc admin killermen §7- Kill endermen holding blocks for too long");
         admin.sendMessage("§f/lc admin memory §7- View memory diagnostics and cleanup options");
         admin.sendMessage("§f/lc admin transfer <player> §7- Transfer claim ownership");
         admin.sendMessage("§f/lc admin database §7- Database management commands");
@@ -694,6 +699,71 @@ public class AdminCommand {
             admin.sendMessage("§e" + playerName + " §f(" + entry.getValue() + ")");
             admin.sendMessage("§7Last Seen: " + lastSeenStr);
         }
+
+        return true;
+    }
+    private boolean handleKillEndermen(CommandSender sender) {
+        if (!sender.hasPermission("landclaims.admin.killendermen")) {
+            sender.sendMessage("§cYou don't have permission to use this command.");
+            return true;
+        }
+
+        sender.sendMessage("§6[LandClaims] Searching for endermen holding blocks...");
+
+        // Get the threshold time (5 minutes ago)
+        long threshold = System.currentTimeMillis() - (5 * 60 * 1000);
+        Map<UUID, Long> endermanTimes = plugin.getEndermanBlockPickupTimes();
+
+        // Track statistics
+        int totalEndermen = 0;
+        int killedEndermen = 0;
+
+        // Check all worlds
+        for (World world : Bukkit.getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof Enderman) {
+                    totalEndermen++;
+                    Enderman enderman = (Enderman) entity;
+
+                    // Check if enderman is holding a block
+                    if (enderman.getCarriedBlock() != null) {
+                        UUID endermanUUID = enderman.getUniqueId();
+
+                        // Check if we've been tracking this enderman
+                        if (endermanTimes.containsKey(endermanUUID)) {
+                            long pickupTime = endermanTimes.get(endermanUUID);
+
+                            // Check if it's been holding the block for too long
+                            if (pickupTime < threshold) {
+                                // Get the block data before killing
+                                BlockData carriedBlock = enderman.getCarriedBlock();
+                                Location location = enderman.getLocation();
+
+                                // Kill the enderman
+                                enderman.remove();
+
+                                // Drop the block
+                                if (carriedBlock != null) {
+                                    Material material = carriedBlock.getMaterial();
+                                    if (material != Material.AIR) {
+                                        world.dropItemNaturally(location, new ItemStack(material));
+                                    }
+                                }
+
+                                killedEndermen++;
+                                endermanTimes.remove(endermanUUID);
+                            }
+                        } else {
+                            // If we weren't tracking it, start tracking now
+                            plugin.trackEndermanPickup(endermanUUID);
+                        }
+                    }
+                }
+            }
+        }
+
+        sender.sendMessage("§a[LandClaims] Found " + totalEndermen + " endermen, removed " +
+                killedEndermen + " that were holding blocks for too long.");
 
         return true;
     }

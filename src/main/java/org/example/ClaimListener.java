@@ -12,6 +12,7 @@ import org.bukkit.entity.minecart.ExplosiveMinecart;
 import org.bukkit.event.Listener;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -156,18 +157,39 @@ public class ClaimListener implements Listener {
     }
 
 
+    @EventHandler
+    public void onEndermanPickupBlock(EntityChangeBlockEvent event) {
+        if (event.getEntity() instanceof Enderman && event.getTo() == Material.AIR) {
+            // This is an enderman picking up a block
+            plugin.trackEndermanPickup(event.getEntity().getUniqueId());
+        }
+    }
 
-    private boolean canFlyInClaim(Player player, Claim claim) {
-        if (player.hasPermission("landclaims.admin")) {
+
+    public boolean canFlyInClaim(Player player, Claim claim) {
+        // Admin bypass always allows flight
+        if (player.hasPermission("landclaims.admin.bypass")) {
             return true;
         }
 
+        // Must have basic flight permission
+        if (!player.hasPermission("landclaims.flight")) {
+            return false;
+        }
+
+        // In admin claims
         if (claim.isAdminClaim()) {
             return player.hasPermission("landclaims.adminland.fly");
         }
 
-        return claim.getOwner().equals(player.getUniqueId()) ||
-                claim.getTrustLevel(player.getUniqueId()).ordinal() >= TrustLevel.MANAGE.ordinal();
+        // In personal claims
+        if (claim.getOwner().equals(player.getUniqueId())) {
+            return true;
+        }
+
+        // Check trust level - safely handle null case
+        TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+        return trustLevel != null && trustLevel.ordinal() >= TrustLevel.MANAGE.ordinal();
     }
 
 

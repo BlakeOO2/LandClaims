@@ -107,12 +107,64 @@ private void startCacheRefreshTask() {
 
         // Synchronize the update of the main maps
         Bukkit.getScheduler().runTask(plugin, () -> {
-            playerClaims.clear();
-            worldClaims.clear();
-            playerClaims.putAll(newPlayerClaims);
-            worldClaims.putAll(newWorldClaims);
+            // Instead of clearing and replacing, merge the new data
+            // This preserves any in-memory changes that might not be in the database yet
+            mergeClaimMaps(playerClaims, newPlayerClaims);
+            mergeClaimMaps(worldClaims, newWorldClaims);
+            plugin.getLogger().info("Claim cache refreshed and merged with existing data");
         });
     }
+
+    private <K> void mergeClaimMaps(Map<K, Set<Claim>> existingMap, Map<K, Set<Claim>> newMap) {
+        // First, remove claims that no longer exist
+        for (K key : new HashSet<>(existingMap.keySet())) {
+            if (!newMap.containsKey(key)) {
+                existingMap.remove(key);
+                continue;
+            }
+
+            // Remove claims that aren't in the new map
+            Set<Claim> existingClaims = existingMap.get(key);
+            Set<Claim> newClaims = newMap.get(key);
+
+            existingClaims.removeIf(existingClaim ->
+                    !containsMatchingClaim(newClaims, existingClaim));
+        }
+
+        // Then add new claims
+        for (Map.Entry<K, Set<Claim>> entry : newMap.entrySet()) {
+            K key = entry.getKey();
+            Set<Claim> newClaims = entry.getValue();
+
+            if (!existingMap.containsKey(key)) {
+                existingMap.put(key, new HashSet<>(newClaims));
+                continue;
+            }
+
+            // Add claims that don't exist yet
+            Set<Claim> existingClaims = existingMap.get(key);
+            for (Claim newClaim : newClaims) {
+                if (!containsMatchingClaim(existingClaims, newClaim)) {
+                    existingClaims.add(newClaim);
+                }
+            }
+        }
+    }
+
+    private boolean containsMatchingClaim(Set<Claim> claims, Claim targetClaim) {
+        for (Claim claim : claims) {
+            if (claim.getOwner().equals(targetClaim.getOwner()) &&
+                    claim.getWorld().equals(targetClaim.getWorld()) &&
+                    claim.getCorner1().getBlockX() == targetClaim.getCorner1().getBlockX() &&
+                    claim.getCorner1().getBlockZ() == targetClaim.getCorner1().getBlockZ() &&
+                    claim.getCorner2().getBlockX() == targetClaim.getCorner2().getBlockX() &&
+                    claim.getCorner2().getBlockZ() == targetClaim.getCorner2().getBlockZ()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     public void loadClaims() {
         loadClaimsFromDatabase(); // Just call the database-only method
