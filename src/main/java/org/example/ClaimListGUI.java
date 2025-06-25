@@ -185,6 +185,7 @@ public class ClaimListGUI {
             player.closeInventory();
             player.sendMessage("§c[LandClaims] Are you sure you want to delete this claim?");
             player.sendMessage("§c[LandClaims] Type §f/lc confirm §cto confirm deletion.");
+            handleFlightUnclaim(player);
             plugin.getPendingActions().put(player.getUniqueId(),
                     () -> deleteClaim(player, targetClaim));
 
@@ -201,6 +202,14 @@ public class ClaimListGUI {
             } else {
                 player.sendMessage("§c[LandClaims] Could not find a safe location in this claim!");
             }
+        }
+    }
+
+    private void handleFlightUnclaim(Player player) {
+        if (plugin.getFlightState(player.getUniqueId())) {
+            player.setAllowFlight(false);
+            player.setFlying(false);
+            player.sendMessage("§c[LandClaims] Flight mode disabled.");
         }
     }
 
