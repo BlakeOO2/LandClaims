@@ -56,7 +56,6 @@ public class LandClaimsCommand implements CommandExecutor {
             plugin.getLogger().info("Processing command for player: " + player.getName());
 
 
-
             if (args.length == 0) {
                 showHelp(player);
                 return true;
@@ -226,6 +225,7 @@ public class LandClaimsCommand implements CommandExecutor {
                 "§a[LandClaims] Flight enabled." :
                 "§c[LandClaims] Flight disabled.");
     }
+
     private boolean handleTrust(Player player, String[] args) {
         if (args.length < 2) {
             player.sendMessage("§c[LandClaims] Usage: /lc trust <player> [level]");
@@ -574,11 +574,20 @@ public class LandClaimsCommand implements CommandExecutor {
                         // Give the blocks back
                         plugin.getBlockAccumulator().addBlocks(player.getUniqueId(), refundAmount);
 
+                        handleFlightUnclaim(player);
                         player.sendMessage("§a[LandClaims] Successfully unclaimed this area.");
                         player.sendMessage("§a[LandClaims] " + refundAmount + " blocks have been refunded to you.");
                     } else {
                         player.sendMessage("§c[LandClaims] Unclaim cancelled.");
                     }
                 });
+    }
+
+    private void handleFlightUnclaim(Player player) {
+        if (plugin.getFlightState(player.getUniqueId())) {
+            player.setAllowFlight(false);
+            player.setFlying(false);
+            player.sendMessage("§c[LandClaims] Flight mode disabled.");
+        }
     }
 }

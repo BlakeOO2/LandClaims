@@ -428,18 +428,36 @@ public class DatabaseManager {
         try (DatabaseTransaction transaction = new DatabaseTransaction(connection)) {
             Connection conn = transaction.getConnection();
 
-            // Find the existing claim ID
+            // Debug the claim details first
+            plugin.getLogger().info("[Debug] Updating flags for claim at: " +
+                    claim.getWorld() + " [" +
+                    claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ() + "] to [" +
+                    claim.getCorner2().getBlockX() + "," + claim.getCorner2().getBlockZ() + "]");
+
+            // First, find the claim ID with detailed logging
             int claimId = findClaimId(conn, claim);
+
             if (claimId == -1) {
-                plugin.getLogger().warning("Could not find claim to update flags!");
+                plugin.getLogger().warning("[Debug] Failed to find claim in database! Details:");
+                plugin.getLogger().warning("[Debug] Owner: " + claim.getOwner());
+                plugin.getLogger().warning("[Debug] World: " + claim.getWorld());
+                plugin.getLogger().warning("[Debug] Corners: " +
+                        claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ() + " to " +
+                        claim.getCorner2().getBlockX() + "," + claim.getCorner2().getBlockZ());
+
+                // If we can't find the claim, try to save it as a new claim
+                plugin.getLogger().info("[Debug] Attempting to save as new claim...");
+                saveClaim(claim);
                 return;
             }
 
-            // Update the flags
+            plugin.getLogger().info("[Debug] Found claim ID: " + claimId + " - updating flags");
+
+            // Update flags with logging
             updateFlags(conn, claimId, claim.getFlags());
 
             transaction.commit();
-            plugin.getLogger().info("Successfully updated flags for claim " + claimId);
+            plugin.getLogger().info("[Debug] Successfully updated flags for claim " + claimId);
 
         } catch (SQLException e) {
             plugin.getLogger().severe("Error updating claim flags: " + e.getMessage());
