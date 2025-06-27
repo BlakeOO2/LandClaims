@@ -89,6 +89,10 @@ public class ClaimTransferManager {
             // Update in database
             plugin.getDatabaseManager().transferClaim(claim, player.getUniqueId());
 
+            // Update cache by refreshing this specific claim
+            plugin.getClaimManager().refreshClaim(claim);
+            plugin.getClaimManager().refreshCache();
+
             // Notify players
             player.sendMessage("§a[LandClaims] You have accepted the claim transfer.");
             if (sender != null) {
