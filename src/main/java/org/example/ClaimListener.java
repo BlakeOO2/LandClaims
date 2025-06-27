@@ -14,17 +14,15 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.*;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.block.LeavesDecayEvent;
 import org.bukkit.block.Container;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
-import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.EventPriority;
 import org.bukkit.block.data.type.WallSign;
 import org.bukkit.entity.Projectile;
@@ -36,7 +34,6 @@ import org.bukkit.block.data.type.WallSign;
 
 import org.bukkit.entity.Player;
 
-import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.potion.PotionEffect;
@@ -258,6 +255,116 @@ public class ClaimListener implements Listener {
             event.getPlayer().sendMessage("§c[LandClaims] You don't have permission to build here.");
         }
     }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerInteractEntity(PlayerInteractEntityEvent event) {
+        Entity entity = event.getRightClicked();
+        Player player = event.getPlayer();
+
+        // Check for leads/leashes
+        if (entity instanceof LeashHitch) {
+            Claim claim = plugin.getClaimManager().getClaimAt(entity.getLocation());
+            if (claim == null) return; // No claim here, default behavior
+
+            // Owner always has access
+            if (claim.getOwner().equals(player.getUniqueId())) return;
+
+            // Admin bypass
+            if (player.hasPermission("landclaims.admin") &&
+                    plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                return;
+            }
+
+            // Check trust level
+            boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+            boolean allowed = isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_BUILD) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+
+            if (!allowed) {
+                event.setCancelled(true);
+                player.sendMessage("§c[LandClaims] You don't have permission to interact with leads here.");
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onHangingBreak(org.bukkit.event.hanging.HangingBreakByEntityEvent event) {
+        // This handles leads, item frames, paintings, etc.
+        if (!(event.getRemover() instanceof Player)) return;
+
+        Player player = (Player) event.getRemover();
+        Entity entity = event.getEntity();
+
+        Claim claim = plugin.getClaimManager().getClaimAt(entity.getLocation());
+        if (claim == null) return; // No claim here, default behavior
+
+        // Owner always has access
+        if (claim.getOwner().equals(player.getUniqueId())) return;
+
+        // Admin bypass
+        if (player.hasPermission("landclaims.admin") &&
+                plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+            return;
+        }
+
+        // Check trust level
+        boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+        boolean allowed = isTrusted ?
+                claim.getFlag(ClaimFlag.TRUSTED_BUILD) :
+                claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+
+        if (!allowed) {
+            event.setCancelled(true);
+            player.sendMessage("§c[LandClaims] You don't have permission to break this here.");
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerInteractAtEntity(PlayerInteractAtEntityEvent event) {
+        // This is needed for armor stands and some other specific entities
+        Entity entity = event.getRightClicked();
+        Player player = event.getPlayer();
+
+        // Skip if using claiming tool
+        if (player.getInventory().getItemInMainHand().getType() == Material.GOLDEN_SHOVEL) {
+            return;
+        }
+
+        Claim claim = plugin.getClaimManager().getClaimAt(entity.getLocation());
+        if (claim == null) return; // No claim here, default behavior
+
+        // Owner always has access
+        if (claim.getOwner().equals(player.getUniqueId())) return;
+
+        // Admin bypass
+        if (player.hasPermission("landclaims.admin") &&
+                plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+            return;
+        }
+
+        // Check trust level and entity type
+        boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+        boolean allowed;
+
+        if (entity instanceof ArmorStand) {
+            // Armor stands are considered more like containers/interactive blocks
+            allowed = isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_INTERACTIVE);
+        } else {
+            // Other entities follow the build permission
+            allowed = isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_BUILD) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+        }
+
+        if (!allowed) {
+            event.setCancelled(true);
+            player.sendMessage("§c[LandClaims] You don't have permission to interact with this here.");
+        }
+    }
+
     // In ClaimListener.java
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteractSign(PlayerInteractEvent event) {
@@ -760,6 +867,86 @@ public class ClaimListener implements Listener {
                 PotionEffectType.WITHER
         ).contains(type);
     }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onEntityExplodeDamage(org.bukkit.event.entity.EntityExplodeEvent event) {
+        // Handle ghast fireballs and other projectiles from hostile mobs
+        if (event.getEntity() instanceof org.bukkit.entity.Fireball) {
+            org.bukkit.entity.Fireball fireball = (org.bukkit.entity.Fireball) event.getEntity();
+
+            // Check if the projectile is from a mob we want to control (Ghast or Blaze)
+            if (fireball.getShooter() instanceof Ghast || fireball.getShooter() instanceof Blaze) {
+                Claim claim = plugin.getClaimManager().getClaimAt(event.getLocation());
+
+                // Check claim settings
+                if (claim != null && !claim.getFlag(ClaimFlag.MOB_GRIEFING)) {
+                    event.setCancelled(true);
+                    return;
+                }
+
+                // Check global settings for unclaimed areas
+                if (claim == null && !plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.MOB_GRIEFING)) {
+                    event.setCancelled(true);
+                    return;
+                }
+
+                // If explosion is allowed, still filter blocks by claim boundaries
+                event.blockList().removeIf(block -> {
+                    Claim blockClaim = plugin.getClaimManager().getClaimAt(block.getLocation());
+                    if (blockClaim != null) {
+                        return !blockClaim.getFlag(ClaimFlag.MOB_GRIEFING);
+                    }
+                    return !plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.MOB_GRIEFING);
+                });
+            }
+        }
+    }
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onProjectileHit(org.bukkit.event.entity.ProjectileHitEvent event) {
+        // Handle blaze fireballs that might set blocks on fire
+        if (event.getEntity() instanceof org.bukkit.entity.SmallFireball &&
+                event.getEntity().getShooter() instanceof Blaze) {
+
+            // Get the location where the projectile hit
+            Location hitLocation = event.getEntity().getLocation();
+            Claim claim = plugin.getClaimManager().getClaimAt(hitLocation);
+
+            // Check claim settings
+            if (claim != null && !claim.getFlag(ClaimFlag.MOB_GRIEFING)) {
+                event.setCancelled(true);
+
+                // Also extinguish any fire that might have been created
+                if (event.getHitBlock() != null) {
+                    Block hitBlock = event.getHitBlock();
+                    // Check adjacent blocks for fire
+                    for (BlockFace face : BlockFace.values()) {
+                        Block adjacent = hitBlock.getRelative(face);
+                        if (adjacent.getType() == Material.FIRE) {
+                            adjacent.setType(Material.AIR);
+                        }
+                    }
+                }
+            }
+            // Check global settings for unclaimed areas
+            else if (claim == null && !plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.MOB_GRIEFING)) {
+                event.setCancelled(true);
+
+                // Also extinguish any fire that might have been created
+                if (event.getHitBlock() != null) {
+                    Block hitBlock = event.getHitBlock();
+                    // Check adjacent blocks for fire
+                    for (BlockFace face : BlockFace.values()) {
+                        Block adjacent = hitBlock.getRelative(face);
+                        if (adjacent.getType() == Material.FIRE) {
+                            adjacent.setType(Material.AIR);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
 
 
     @EventHandler(priority = EventPriority.HIGH)

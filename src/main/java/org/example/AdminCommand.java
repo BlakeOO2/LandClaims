@@ -197,14 +197,15 @@ public class AdminCommand {
         // Update in database
         plugin.getDatabaseManager().transferClaim(claim, target.getUniqueId());
 
-        // Update cache
+        // Update cache by refreshing this specific claim
+        plugin.getClaimManager().refreshClaim(claim);
         plugin.getClaimManager().refreshCache();
 
         admin.sendMessage("§a[LandClaims] Successfully transferred claim from " +
                 oldOwnerName + " to " + target.getName() + ".");
 
         // Notify the new owner if they're online
-        if (target.isOnline() && !target.equals(admin)) {
+        if (target.isOnline()) {
             target.getPlayer().sendMessage("§a[LandClaims] An admin has transferred a claim to you.");
         }
 

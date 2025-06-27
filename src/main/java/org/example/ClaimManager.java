@@ -339,6 +339,15 @@ private void startCacheRefreshTask() {
         addClaim(claim);
         return true;
     }
+
+    /**
+     * Refreshes a specific claim in the cache
+     * @param claim The claim to refresh
+     */
+    public void refreshClaim(Claim claim) {
+        removeClaim(claim);
+        addClaim(claim);
+    }
     public Set<Claim> getNearbyClaims(Location location, int radius) {
         Set<Claim> nearbyClaims = new HashSet<>();
         Set<Claim> worldClaims = this.worldClaims.get(location.getWorld().getName());
