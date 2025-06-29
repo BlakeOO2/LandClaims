@@ -1,5 +1,5 @@
 name: LandClaims
-version: 1.1.14.7
+version: ${project.version}
 main: org.example.Main
 api-version: 1.21
 softdepend: [BlueMap, ChestShop]

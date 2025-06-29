@@ -106,9 +106,21 @@ public class TrustGUI {
     }
 
     private TrustLevel getNextTrustLevel(TrustLevel current) {
-        TrustLevel[] levels = TrustLevel.values();
-        int nextIndex = (current.ordinal() + 1) % (levels.length - 1); // Exclude OWNER level
-        return levels[nextIndex];
+        // Define the valid trust levels in the order we want to cycle through
+        TrustLevel[] cyclableValues = {TrustLevel.NONE, TrustLevel.ACCESS, TrustLevel.BUILD, TrustLevel.MANAGE};
+
+        // Find the current index
+        int currentIndex = -1;
+        for (int i = 0; i < cyclableValues.length; i++) {
+            if (cyclableValues[i] == current) {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        // Move to the next level (or wrap around to the first if at the end)
+        int nextIndex = (currentIndex + 1) % cyclableValues.length;
+        return cyclableValues[nextIndex];
     }
 
     public int getOpenMenusCount() {
