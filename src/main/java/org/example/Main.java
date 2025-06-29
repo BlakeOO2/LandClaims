@@ -17,6 +17,11 @@ import java.util.*;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.HashMap;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
+
 
 public class Main extends JavaPlugin {
     private static Main instance;

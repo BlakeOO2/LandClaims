@@ -61,10 +61,21 @@ public class ClaimListener implements Listener {
         return item != null && item.getType() == Material.GOLDEN_SHOVEL;
     }
 
+
+
     private boolean canBuild(Player player, Claim claim) {
         return claim.getOwner().equals(player.getUniqueId()) ||
                 claim.getTrustLevel(player.getUniqueId()).ordinal() >= TrustLevel.BUILD.ordinal() ||
                 player.hasPermission("landclaims.admin.override");
+    }
+
+    private boolean isCrop(Material material) {
+        return material == Material.WHEAT ||
+                material == Material.CARROTS ||
+                material == Material.POTATOES ||
+                material == Material.BEETROOTS ||
+                material == Material.MELON_STEM ||
+                material == Material.PUMPKIN_STEM;
     }
 
     @EventHandler(priority = EventPriority.LOW)
@@ -152,16 +163,6 @@ public class ClaimListener implements Listener {
             player.sendMessage(message);
         }
     }
-
-
-    @EventHandler
-    public void onEndermanPickupBlock(EntityChangeBlockEvent event) {
-        if (event.getEntity() instanceof Enderman && event.getTo() == Material.AIR) {
-            // This is an enderman picking up a block
-            plugin.trackEndermanPickup(event.getEntity().getUniqueId());
-        }
-    }
-
 
     public boolean canFlyInClaim(Player player, Claim claim) {
         // Admin bypass always allows flight
@@ -489,6 +490,8 @@ public class ClaimListener implements Listener {
         try {
             Player player = event.getPlayer();
             ItemStack item = player.getInventory().getItemInMainHand();
+            Block block = event.getClickedBlock();
+
 
             // Check for admin claiming tool
             if (item.getType() == Material.GOLDEN_AXE &&
@@ -544,7 +547,21 @@ public class ClaimListener implements Listener {
                 } else if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
                     plugin.getSelectionManager().handleSecondPoint(player, clickedBlock.getLocation());
                 }
+            } else if (block != null && (block.getType() == Material.FARMLAND || isCrop(block.getType()))) {
+                Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
+
+                if (claim != null) {
+                    boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+
+                    // Use the build flags to determine permission
+                    if (isTrusted && !claim.getFlag(ClaimFlag.TRUSTED_BUILD)) {
+                        event.setCancelled(true);
+                    } else if (!isTrusted && !claim.getFlag(ClaimFlag.UNTRUSTED_BUILD)) {
+                        event.setCancelled(true);
+                    }
+                }
             }
+
         } catch (Exception e) {
             plugin.getLogger().severe("Error in claim interaction: " + e.getMessage());
             e.printStackTrace();
@@ -980,21 +997,39 @@ public class ClaimListener implements Listener {
 
     // Add these new event handlers to ClaimListener.java:
 
+
+
     @EventHandler(priority = EventPriority.HIGH)
-    public void onEndermanPickup(org.bukkit.event.entity.EntityChangeBlockEvent event) {
-        if (event.getEntity() instanceof org.bukkit.entity.Enderman) {
-            Location loc = event.getBlock().getLocation();
-            Claim claim = plugin.getClaimManager().getClaimAt(loc);
-            if (claim != null) {
-                if (!claim.getFlag(ClaimFlag.MOB_GRIEFING)) {
-                    event.setCancelled(true);
-                }
-            } else {
-                // Use global settings
-                if (!plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.MOB_GRIEFING)) {
-                    event.setCancelled(true);
-                }
+    public void onEndermanBlockChange(EntityChangeBlockEvent event) {
+        if (!(event.getEntity() instanceof Enderman)) {
+            return;
+        }
+
+        // Check if this is a pickup (block -> AIR) or placement (AIR -> block)
+        Block block = event.getBlock();
+
+        // Get claim at the block location
+        Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
+
+        // Check mob griefing permission
+        if (claim != null) {
+            // If in a claim, use claim's MOB_GRIEFING flag
+            if (!claim.getFlag(ClaimFlag.MOB_GRIEFING)) {
+                event.setCancelled(true);
+                return;
             }
+        } else {
+            // If in wilderness, use global MOB_GRIEFING setting
+            if (!plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.MOB_GRIEFING)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+
+        // If it's a pickup event, track it (for any other mechanics that might need this info)
+        if (event.getTo() == Material.AIR) {
+            event.setCancelled(true);
+            plugin.trackEndermanPickup(event.getEntity().getUniqueId());
         }
     }
 
