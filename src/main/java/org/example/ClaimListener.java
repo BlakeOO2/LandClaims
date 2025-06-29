@@ -11,14 +11,9 @@ import org.bukkit.entity.*;
 import org.bukkit.entity.minecart.ExplosiveMinecart;
 import org.bukkit.event.Listener;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityChangeBlockEvent;
-import org.bukkit.event.entity.PotionSplashEvent;
+import org.bukkit.event.block.*;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.player.*;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.entity.CreatureSpawnEvent;
-import org.bukkit.event.block.LeavesDecayEvent;
 import org.bukkit.block.Container;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.Material;
@@ -82,6 +77,50 @@ public class ClaimListener implements Listener {
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         if (plugin.getChatInputManager().handleChatInput(event.getPlayer(), event.getMessage())) {
             event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onProjectileHitEvent(ProjectileHitEvent event) {
+        if (!(event.getEntity() instanceof SmallFireball)) {
+            return;
+        }
+
+        // Get the location where the fireball will land
+        Location impactLocation = event.getEntity().getLocation();
+        Claim claim = plugin.getClaimManager().getClaimAt(impactLocation);
+
+        // Check if fire spread is allowed in this location
+        if (claim != null) {
+            if (!claim.getFlag(ClaimFlag.FIRE_SPREAD)) {
+                event.getEntity().remove(); // Remove the fireball
+                event.setCancelled(true);
+            }
+        } else {
+            // Check global settings for unclaimed areas
+            if (!plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.FIRE_SPREAD)) {
+                event.getEntity().remove();
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onBlockIgnite(BlockIgniteEvent event) {
+        // Check if it's from a blaze fireball
+        if (event.getCause() == BlockIgniteEvent.IgniteCause.FIREBALL) {
+            Claim claim = plugin.getClaimManager().getClaimAt(event.getBlock().getLocation());
+
+            if (claim != null) {
+                if (!claim.getFlag(ClaimFlag.FIRE_SPREAD)) {
+                    event.setCancelled(true);
+                }
+            } else {
+                // Check global settings for unclaimed areas
+                if (!plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.FIRE_SPREAD)) {
+                    event.setCancelled(true);
+                }
+            }
         }
     }
 
@@ -918,6 +957,10 @@ public class ClaimListener implements Listener {
             }
         }
     }
+
+
+
+
     @EventHandler(priority = EventPriority.HIGH)
     public void onProjectileHit(org.bukkit.event.entity.ProjectileHitEvent event) {
         // Handle blaze fireballs that might set blocks on fire
