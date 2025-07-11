@@ -100,6 +100,10 @@ public class AdminCommand {
             // In AdminCommand.java
             case "transfer":
                 return handleAdminTransfer(sender, args);
+            case "trust":
+                return handleAdminTrust(sender, args);
+            case "untrust":
+                return handleAdminUntrust(sender, args);
             case "memory":
                 if (args.length < 3) {
                     return handleMemoryCommand(sender);
@@ -147,6 +151,137 @@ public class AdminCommand {
         }
     }
 
+
+            private boolean handleAdminUntrust(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("§c[LandClaims] This command can only be used by players.");
+            return true;
+        }
+
+        Player admin = (Player) sender;
+
+        if (!admin.hasPermission("landclaims.admin.trust")) {
+            admin.sendMessage("§c[LandClaims] You don't have permission to use this command.");
+            return true;
+        }
+
+        if (args.length < 3) {
+            admin.sendMessage("§c[LandClaims] Usage: /lc admin untrust <player>");
+            return true;
+        }
+
+        // Get the claim they're standing in
+        Claim claim = plugin.getClaimManager().getClaimAt(admin.getLocation());
+        if (claim == null) {
+            admin.sendMessage("§c[LandClaims] You must be standing in a claim to remove a trusted user.");
+            return true;
+        }
+
+        // Check if it's an admin claim
+        if (!claim.isAdminClaim()) {
+            admin.sendMessage("§c[LandClaims] This command can only be used in admin claims. For regular claims, use /lc untrust instead.");
+            return true;
+        }
+
+        // Get the target player
+        String targetName = args[2];
+        OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
+        if (!target.hasPlayedBefore() && !target.isOnline()) {
+            admin.sendMessage("§c[LandClaims] Player not found: " + targetName);
+            return true;
+        }
+
+        // Check if player is actually trusted
+        if (claim.getTrustLevel(target.getUniqueId()) == null) {
+            admin.sendMessage("§c[LandClaims] " + target.getName() + " is not trusted in this claim.");
+            return true;
+        }
+
+        // Remove trust
+        claim.setTrust(target.getUniqueId(), null);
+
+        // Update in database
+        plugin.getDatabaseManager().updateClaimTrustedPlayers(claim);
+
+        admin.sendMessage("§a[LandClaims] Removed " + target.getName() + " from trusted users in this admin claim.");
+
+        // Notify the untrusted player if they're online
+        Player targetPlayer = target.getPlayer();
+        if (targetPlayer != null) {
+            targetPlayer.sendMessage("§c[LandClaims] Your access to an admin claim has been removed.");
+        }
+
+        return true;
+            }
+
+            private boolean handleAdminTrust(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("§c[LandClaims] This command can only be used by players.");
+            return true;
+        }
+
+        Player admin = (Player) sender;
+
+        if (!admin.hasPermission("landclaims.admin.trust")) {
+            admin.sendMessage("§c[LandClaims] You don't have permission to use this command.");
+            return true;
+        }
+
+        if (args.length < 3) {
+            admin.sendMessage("§c[LandClaims] Usage: /lc admin trust <player> [trustLevel]");
+            admin.sendMessage("§c[LandClaims] Trust levels: ACCESS, BUILD, MANAGE");
+            return true;
+        }
+
+        // Get the claim they're standing in
+        Claim claim = plugin.getClaimManager().getClaimAt(admin.getLocation());
+        if (claim == null) {
+            admin.sendMessage("§c[LandClaims] You must be standing in a claim to add a trusted user.");
+            return true;
+        }
+
+        // Check if it's an admin claim
+        if (!claim.isAdminClaim()) {
+            admin.sendMessage("§c[LandClaims] This command can only be used in admin claims. For regular claims, use /lc trust instead.");
+            return true;
+        }
+
+        // Get the target player
+        String targetName = args[2];
+        OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
+        if (!target.hasPlayedBefore() && !target.isOnline()) {
+            admin.sendMessage("§c[LandClaims] Player not found: " + targetName);
+            return true;
+        }
+
+        // Determine trust level
+        TrustLevel trustLevel = TrustLevel.BUILD; // Default to BUILD if not specified
+        if (args.length >= 4) {
+            try {
+                trustLevel = TrustLevel.valueOf(args[3].toUpperCase());
+            } catch (IllegalArgumentException e) {
+                admin.sendMessage("§c[LandClaims] Invalid trust level. Use: ACCESS, BUILD, or MANAGE");
+                return true;
+            }
+        }
+
+        // Set the trust level
+        claim.setTrust(target.getUniqueId(), trustLevel);
+
+        // Update in database
+        plugin.getDatabaseManager().updateClaimTrustedPlayers(claim);
+
+        admin.sendMessage("§a[LandClaims] Granted " + trustLevel + " access to " + target.getName() + " in this admin claim.");
+
+        // Notify the trusted player if they're online
+        Player targetPlayer = target.getPlayer();
+        if (targetPlayer != null) {
+            targetPlayer.sendMessage("§a[LandClaims] You have been granted " + trustLevel + 
+                    " access to an admin claim.");
+        }
+
+        return true;
+            }
 
     private boolean handleAdminTransfer(CommandSender sender, String[] args) {
         if (!(sender instanceof Player)) {
@@ -654,6 +789,8 @@ public class AdminCommand {
         admin.sendMessage("§f/lc admin killermen §7- Kill endermen holding blocks for too long");
         admin.sendMessage("§f/lc admin memory §7- View memory diagnostics and cleanup options");
         admin.sendMessage("§f/lc admin transfer <player> §7- Transfer claim ownership");
+        admin.sendMessage("§f/lc admin trust <player> [level] §7- Add trusted user to admin claim");
+        admin.sendMessage("§f/lc admin untrust <player> §7- Remove trusted user from admin claim");
         admin.sendMessage("§f/lc admin database §7- Database management commands");
         admin.sendMessage("§f/lc admin bluemap reload §7- Reload BlueMap markers");
         admin.sendMessage("§f/lc admin bluemap toggle §7- Toggle BlueMap integration");
@@ -673,6 +810,8 @@ public class AdminCommand {
         sender.sendMessage("§f/lc admin memory §7- View memory diagnostics and cleanup options");
         sender.sendMessage("§f/lc admin unclaimadmin §7- Remove an admin claim");
         sender.sendMessage("§f/lc admin bypass §7- Toggle admin bypass mode");
+        sender.sendMessage("§f/lc admin trust <player> [level] §7- Add trusted user to admin claim");
+        sender.sendMessage("§f/lc admin untrust <player> §7- Remove trusted user from admin claim");
         sender.sendMessage("§f/lc admin reload §7- Reload configuration");
     }
 
