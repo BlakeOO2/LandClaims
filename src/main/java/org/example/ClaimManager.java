@@ -341,6 +341,15 @@ private void startCacheRefreshTask() {
     }
 
     /**
+     * Explicitly refreshes a claim in the cache after ownership changes
+     * This ensures old references are properly updated
+     */
+    public void refreshClaim(Claim claim) {
+        removeClaim(claim);
+        addClaim(claim);
+    }
+
+    /**
      * Refreshes a specific claim in the cache
      * @param claim The claim to refresh
      */

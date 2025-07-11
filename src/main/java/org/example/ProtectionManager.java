@@ -40,15 +40,26 @@ public class ProtectionManager {
                 return true;
             }
 
-            boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
-            boolean allowed = isTrusted ?
-                    claim.getFlag(ClaimFlag.TRUSTED_BUILD) :
-                    claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
-
-            if (!allowed) {
-                player.sendMessage("§c[LandClaims] You don't have permission to build in this claim.");
+            // Check trust level first to determine building permission
+            TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+            if (trustLevel != null && trustLevel.ordinal() >= TrustLevel.BUILD.ordinal()) {
+                // BUILD or higher trust level allows building
+                return claim.getFlag(ClaimFlag.TRUSTED_BUILD);
+            } else if (trustLevel != null) {
+                // Has trust but not BUILD level
+                boolean allowed = claim.getFlag(ClaimFlag.TRUSTED_BUILD);
+                if (!allowed) {
+                    player.sendMessage("§c[LandClaims] You don't have permission to build in this claim.");
+                }
+                return allowed;
+            } else {
+                // Not trusted at all
+                boolean allowed = claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+                if (!allowed) {
+                    player.sendMessage("§c[LandClaims] You don't have permission to build in this claim.");
+                }
+                return allowed;
             }
-            return allowed;
         } else {
             // Wild area protection logic
             boolean allowed = plugin.getWorldSettingsManager().getGlobalFlag(ClaimFlag.WILD_BUILD);

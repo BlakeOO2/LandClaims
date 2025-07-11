@@ -42,11 +42,19 @@ public class SelectionManager {
         // Calculate required blocks
         int requiredBlocks = calculateRequiredBlocks(selection);
         int availableBlocks = plugin.getClaimManager().getPlayerAvailableBlocks(player.getUniqueId());
+        int minimumSize = plugin.getConfigManager().getMinimumClaimSize();
 
         // Debug logging
         plugin.getLogger().info("[Debug] Player " + player.getName() + " attempting to create claim:");
         plugin.getLogger().info("[Debug] Required blocks: " + requiredBlocks);
         plugin.getLogger().info("[Debug] Available blocks: " + availableBlocks);
+        plugin.getLogger().info("[Debug] Minimum size: " + minimumSize);
+
+        if (requiredBlocks < minimumSize) {
+            player.sendMessage("§c[LandClaims] Claims must be at least " + minimumSize + " blocks in size. Your selection is only " + requiredBlocks + " blocks.");
+            clearSelection(player);
+            return;
+        }
 
         if (requiredBlocks > availableBlocks) {
             player.sendMessage("§c[LandClaims] You need " + requiredBlocks + " blocks to create this claim, but you only have " + availableBlocks + ".");

@@ -191,15 +191,17 @@ public class AdminCommand {
         UUID oldOwner = claim.getOwner();
         String oldOwnerName = Bukkit.getOfflinePlayer(oldOwner).getName();
 
+        // First, remove the claim from cache to prevent duplication
+        plugin.getClaimManager().removeClaim(claim);
+
         // Update claim ownership
         claim.setOwner(target.getUniqueId());
 
         // Update in database
         plugin.getDatabaseManager().transferClaim(claim, target.getUniqueId());
 
-        // Update cache by refreshing this specific claim
-        plugin.getClaimManager().refreshClaim(claim);
-        plugin.getClaimManager().refreshCache();
+        // Add claim back to cache with new owner
+        plugin.getClaimManager().addClaim(claim);
 
         admin.sendMessage("§a[LandClaims] Successfully transferred claim from " +
                 oldOwnerName + " to " + target.getName() + ".");

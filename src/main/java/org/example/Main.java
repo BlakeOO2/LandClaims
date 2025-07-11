@@ -188,9 +188,14 @@ public class Main extends JavaPlugin {
             return player.hasPermission("landclaims.admin");
         }
 
-        // In personal claims
-        return claim.getOwner().equals(player.getUniqueId()) ||
-                claim.getTrustLevel(player.getUniqueId()) != null;
+        // In personal claims - owner always has access
+        if (claim.getOwner().equals(player.getUniqueId())) {
+            return true;
+        }
+
+        // Check trust level - ensure we handle null case properly
+        TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+        return trustLevel != null && trustLevel.ordinal() >= TrustLevel.BUILD.ordinal();
     }
     public boolean areCriticalComponentsReady() {
         boolean ready = true;

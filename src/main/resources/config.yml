@@ -7,7 +7,7 @@ claiming:
   default-blocks: 2000
   blocks-per-hour: 500
   max-blocks: 1000000
-  minimum-size: 100
+  minimum-size: 10
   max-claim-size: 1000000
 
 visualization:

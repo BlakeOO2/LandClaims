@@ -59,9 +59,14 @@ public class ClaimListener implements Listener {
 
 
     private boolean canBuild(Player player, Claim claim) {
-        return claim.getOwner().equals(player.getUniqueId()) ||
-                claim.getTrustLevel(player.getUniqueId()).ordinal() >= TrustLevel.BUILD.ordinal() ||
-                player.hasPermission("landclaims.admin.override");
+        // Owner or admin always has permission
+        if (claim.getOwner().equals(player.getUniqueId()) || player.hasPermission("landclaims.admin.override")) {
+            return true;
+        }
+
+        // Check trust level - ensure we handle null case
+        TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+        return trustLevel != null && trustLevel.ordinal() >= TrustLevel.BUILD.ordinal();
     }
 
     private boolean isCrop(Material material) {
@@ -144,6 +149,13 @@ public class ClaimListener implements Listener {
                     player.setAllowFlight(true);
                     player.setFlying(true);
                 } else {
+                    // If player was flying and is now leaving a claim where they had flight permissions
+                    if (player.isFlying() && fromClaim != null && canFlyInClaim(player, fromClaim)) {
+                        // Store current time when flight is disabled due to leaving claim
+                        // This will be used to prevent fall damage for a short time
+                        lastFlightMessage.put(player.getUniqueId(), System.currentTimeMillis());
+                    }
+
                     player.setAllowFlight(false);
                     player.setFlying(false);
 
@@ -230,18 +242,23 @@ public class ClaimListener implements Listener {
     }
 
 
-    // Update the fall damage prevention to use the same permission check
+    // Update the fall damage prevention to only work when leaving a claim with flight permissions
     @EventHandler
     public void onPlayerFallDamage(org.bukkit.event.entity.EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player)) return;
         if (event.getCause() != org.bukkit.event.entity.EntityDamageEvent.DamageCause.FALL) return;
 
         Player player = (Player) event.getEntity();
-        // If they were just flying in a claim where they have permission
-        if (player.hasPermission("landclaims.flight")) {
-            Claim claim = plugin.getClaimManager().getClaimAt(player.getLocation());
-            if (claim != null && canFlyInClaim(player, claim)) {
+        // Only apply fall damage protection if they have flight enabled
+        if (player.hasPermission("landclaims.flight") && plugin.getFlightState(player.getUniqueId())) {
+            // We store last location where flight was disabled in lastFlightMessage map 
+            // temporarily reuse this to check if the player recently left a claim
+            Long lastFlightDisabled = lastFlightMessage.get(player.getUniqueId());
+
+            // If flight was disabled in the last 5 seconds, prevent fall damage
+            if (lastFlightDisabled != null && (System.currentTimeMillis() - lastFlightDisabled < 5000)) {
                 event.setCancelled(true);
+                return;
             }
         }
     }
@@ -282,9 +299,52 @@ public class ClaimListener implements Listener {
     // In ClaimListener.java, add:
     @EventHandler(priority = org.bukkit.event.EventPriority.HIGH)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (!plugin.getProtectionManager().canBuild(event.getPlayer(), event.getBlock())) {
+        Player player = event.getPlayer();
+        Block block = event.getBlock();
+
+        // Special handling for crops and farmland
+        if (isCrop(block.getType()) || block.getType() == Material.FARMLAND) {
+            Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
+
+            if (claim != null) {
+                // Owner always has permission
+                if (claim.getOwner().equals(player.getUniqueId())) {
+                    return; // Allow breaking
+                }
+
+                // Admin bypass
+                if (player.hasPermission("landclaims.admin") &&
+                        plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                    return; // Allow breaking
+                }
+
+                // Check trust level first
+                TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+                boolean allowed = false;
+
+                if (trustLevel != null && trustLevel.ordinal() >= TrustLevel.BUILD.ordinal()) {
+                    // BUILD or higher trust level
+                    allowed = claim.getFlag(ClaimFlag.TRUSTED_BUILD);
+                } else if (trustLevel != null) {
+                    // Has trust but below BUILD level
+                    allowed = claim.getFlag(ClaimFlag.TRUSTED_BUILD);
+                } else {
+                    // Not trusted at all
+                    allowed = claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+                }
+
+                if (!allowed) {
+                    event.setCancelled(true);
+                    player.sendMessage("§c[LandClaims] You don't have permission to break crops here.");
+                    return;
+                }
+            }
+        }
+
+        // Regular block breaking check
+        if (!plugin.getProtectionManager().canBuild(player, block)) {
             event.setCancelled(true);
-            event.getPlayer().sendMessage("§c[LandClaims] You don't have permission to build here.");
+            player.sendMessage("§c[LandClaims] You don't have permission to build here.");
         }
     }
 
@@ -590,6 +650,17 @@ public class ClaimListener implements Listener {
                 Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
 
                 if (claim != null) {
+                    // Owner always has permission to interact with crops
+                    if (claim.getOwner().equals(player.getUniqueId())) {
+                        return; // Allow the interaction
+                    }
+
+                    // Admin bypass
+                    if (player.hasPermission("landclaims.admin") &&
+                            plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                        return; // Allow the interaction
+                    }
+
                     boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
 
                     // Use the build flags to determine permission
@@ -686,6 +757,32 @@ public class ClaimListener implements Listener {
         // Skip if using claiming tool
         if (player.getInventory().getItemInMainHand().getType() == Material.GOLDEN_SHOVEL) {
             return;
+        }
+
+        // Check for axolotls to prevent them from being picked up in claims where player doesn't have build permission
+        if (entity.getType() == org.bukkit.entity.EntityType.AXOLOTL) {
+            Claim claim = plugin.getClaimManager().getClaimAt(entity.getLocation());
+            if (claim == null) return;
+
+            // Owner always has access
+            if (claim.getOwner().equals(player.getUniqueId())) return;
+
+            // Admin bypass
+            if (player.hasPermission("landclaims.admin") &&
+                    plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                return;
+            }
+
+            boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+            boolean allowed = isTrusted ?
+                    claim.getFlag(ClaimFlag.TRUSTED_BUILD) :
+                    claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+
+            if (!allowed) {
+                event.setCancelled(true);
+                player.sendMessage("§c[LandClaims] You don't have permission to pick up axolotls here.");
+                return;
+            }
         }
 
         // Check for item frames, armor stands, and other interactable entities
@@ -1043,7 +1140,42 @@ public class ClaimListener implements Listener {
 
 
     @EventHandler(priority = EventPriority.HIGH)
-    public void onEndermanBlockChange(EntityChangeBlockEvent event) {
+    public void onEntityChangeBlock(EntityChangeBlockEvent event) {
+        // Handle crop trampling by players (jumping on farmland)
+        if (event.getEntity() instanceof Player) {
+            Player player = (Player) event.getEntity();
+            Block block = event.getBlock();
+
+            // Check if it's farmland being trampled
+            if (block.getType() == Material.FARMLAND && event.getTo() == Material.DIRT) {
+                Claim claim = plugin.getClaimManager().getClaimAt(block.getLocation());
+
+                if (claim != null) {
+                    // Owner always has permission to trample crops
+                    if (claim.getOwner().equals(player.getUniqueId())) {
+                        return; // Allow trampling
+                    }
+
+                    // Admin bypass
+                    if (player.hasPermission("landclaims.admin") &&
+                            plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                        return; // Allow trampling
+                    }
+
+                    boolean isTrusted = claim.getTrustLevel(player.getUniqueId()) != null;
+                    boolean allowed = isTrusted ? 
+                            claim.getFlag(ClaimFlag.TRUSTED_BUILD) : 
+                            claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+
+                    if (!allowed) {
+                        event.setCancelled(true);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Handle enderman block changes
         if (!(event.getEntity() instanceof Enderman)) {
             return;
         }

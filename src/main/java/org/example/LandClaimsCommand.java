@@ -504,6 +504,8 @@ public class LandClaimsCommand implements CommandExecutor {
                 player.sendMessage("§c[LandClaims] Flight is enabled but only works in claims you own or are trusted in.");
             }
         } else {
+            // Set player's flight to false but don't disable flight permission state immediately
+            // This prevents fall damage when toggling flight off
             player.setAllowFlight(false);
             player.setFlying(false);
             player.sendMessage("§c[LandClaims] Flight mode disabled.");

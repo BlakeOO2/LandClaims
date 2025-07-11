@@ -84,14 +84,18 @@ public class ClaimTransferManager {
 
             // Update claim ownership in memory
             UUID oldOwner = claim.getOwner();
+
+            // First, remove the claim from cache to prevent duplication
+            plugin.getClaimManager().removeClaim(claim);
+
+            // Update owner
             claim.setOwner(player.getUniqueId());
 
             // Update in database
             plugin.getDatabaseManager().transferClaim(claim, player.getUniqueId());
 
-            // Update cache by refreshing this specific claim
-            plugin.getClaimManager().refreshClaim(claim);
-            plugin.getClaimManager().refreshCache();
+            // Add the claim back to cache with new owner
+            plugin.getClaimManager().addClaim(claim);
 
             // Notify players
             player.sendMessage("§a[LandClaims] You have accepted the claim transfer.");

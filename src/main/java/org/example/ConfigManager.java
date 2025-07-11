@@ -42,7 +42,7 @@ public class ConfigManager {
             config.set("claiming.max-blocks", 1000000);
         }
         if (!config.contains("claiming.minimum-size")) {
-            config.set("claiming.minimum-size", 100);
+            config.set("claiming.minimum-size", 10);
         }
         if (!config.contains("claiming.max-claim-size")) {
             config.set("claiming.max-claim-size", 1000000);
