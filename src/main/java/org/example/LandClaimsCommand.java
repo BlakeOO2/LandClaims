@@ -501,14 +501,22 @@ public class LandClaimsCommand implements CommandExecutor {
                 player.setFlying(true);
                 player.sendMessage("§a[LandClaims] Flight mode enabled.");
             } else {
+                // Don't toggle flight if not in a valid claim
                 player.sendMessage("§c[LandClaims] Flight is enabled but only works in claims you own or are trusted in.");
             }
         } else {
-            // Set player's flight to false but don't disable flight permission state immediately
-            // This prevents fall damage when toggling flight off
-            player.setAllowFlight(false);
-            player.setFlying(false);
-            player.sendMessage("§c[LandClaims] Flight mode disabled.");
+            // Check if player is in a claim where they have flight permissions
+            Claim currentClaim = plugin.getClaimManager().getClaimAt(player.getLocation());
+            if (currentClaim != null && plugin.canFlyInClaim(player, currentClaim)) {
+                // Only disable flight if they're in a claim where they have flight permissions
+                player.setAllowFlight(false);
+                player.setFlying(false);
+                player.sendMessage("§c[LandClaims] Flight mode disabled.");
+            } else {
+                // They're not in a claim where they should have flight, so just update the internal state
+                // without changing their actual flight status
+                player.sendMessage("§c[LandClaims] Flight mode disabled. This will take effect when entering/leaving claims.");
+            }
         }
 
         return true;

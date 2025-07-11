@@ -145,16 +145,15 @@ public class ClaimListener implements Listener {
         if (plugin.getFlightState(player.getUniqueId())) {
             // Only handle flight changes when crossing claim boundaries
             if (!Objects.equals(fromClaim, toClaim)) {
+                // Check if they have flight permission in the new claim
                 if (toClaim != null && canFlyInClaim(player, toClaim)) {
                     player.setAllowFlight(true);
                     player.setFlying(true);
-                } else {
-                    // If player was flying and is now leaving a claim where they had flight permissions
-                    if (player.isFlying() && fromClaim != null && canFlyInClaim(player, fromClaim)) {
-                        // Store current time when flight is disabled due to leaving claim
-                        // This will be used to prevent fall damage for a short time
-                        lastFlightMessage.put(player.getUniqueId(), System.currentTimeMillis());
-                    }
+                } else if (fromClaim != null && canFlyInClaim(player, fromClaim)) {
+                    // Only disable flight if they're leaving a claim where they had flight permissions
+                    // Store current time when flight is disabled due to leaving claim
+                    // This will be used to prevent fall damage for a short time
+                    lastFlightMessage.put(player.getUniqueId(), System.currentTimeMillis());
 
                     player.setAllowFlight(false);
                     player.setFlying(false);
@@ -167,6 +166,8 @@ public class ClaimListener implements Listener {
                         lastFlightMessage.put(player.getUniqueId(), now);
                     }
                 }
+                // If they're not in a claim where they had permissions before, do nothing
+                // This preserves their flight state when moving between claims they don't own
             }
         }
 

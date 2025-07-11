@@ -349,13 +349,26 @@ private void startCacheRefreshTask() {
         addClaim(claim);
     }
 
-    /**
-     * Refreshes a specific claim in the cache
-     * @param claim The claim to refresh
-     */
-    public void refreshClaim(Claim claim) {
-        removeClaim(claim);
-        addClaim(claim);
+    public void handleFlightForUnclaimedClaim(Claim claim, Player unclaimingPlayer) {
+        // For all online players
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            // Skip the player who is unclaiming (they're handled separately)
+            if (player.equals(unclaimingPlayer)) continue;
+
+            // Check if player has flight enabled and is in the claim
+            if (plugin.getFlightState(player.getUniqueId()) &&
+                    claim.contains(player.getLocation())) {
+
+                // Check if player was trusted in the claim at BUILD level or higher
+                TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+                if (trustLevel != null && trustLevel.ordinal() >= TrustLevel.BUILD.ordinal()) {
+                    // Disable flight for this trusted player
+                    player.setAllowFlight(false);
+                    player.setFlying(false);
+                    player.sendMessage("§c[LandClaims] Flight disabled - claim was unclaimed.");
+                }
+            }
+        }
     }
     public Set<Claim> getNearbyClaims(Location location, int radius) {
         Set<Claim> nearbyClaims = new HashSet<>();

@@ -288,6 +288,9 @@ public class MainClaimGUI {
                 break;
             case BARRIER:
                 if (admin.isSneaking()) {
+                    // Handle flight for trusted players in the claim before removing it
+                    plugin.getClaimManager().handleFlightForUnclaimedClaim(claim, admin);
+
                     plugin.getClaimManager().removeClaim(claim);
                     plugin.getDataManager().deleteClaim(claim);
                     admin.sendMessage("§a[LandClaims] Claim deleted successfully!");
