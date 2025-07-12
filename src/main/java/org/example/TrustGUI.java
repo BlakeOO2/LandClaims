@@ -175,6 +175,11 @@ public class TrustGUI {
                     plugin.getDatabaseManager().updateClaimTrustedPlayers(claim); // Use new method
                     player.sendMessage("§a[LandClaims] Successfully trusted " + target.getName() + " with BUILD access.");
 
+                    Player targetPlayer = target.getPlayer();
+                    if (targetPlayer != null) {
+                        targetPlayer.sendMessage("§a[LandClaims] You have been granted BUILD access"  +
+                                " access to " + player.getName() + "'s claim.");
+                    }
                     // Reopen the trust menu
                     Bukkit.getScheduler().runTask(plugin, () -> openTrustMenu(player, claim));
                 });
