@@ -1,6 +1,7 @@
 package org.example;
 
 import org.bukkit.*;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -401,8 +402,11 @@ public class LandClaimsCommand implements CommandExecutor {
     }
 
     private Location findSafeY(World world, int x, int z) {
-        // Start from the player's Y level and work down
-        int startY = Math.min(world.getMaxHeight() - 10, Math.max(world.getMinHeight() + 10, 100));
+        // Start from the highest possible position at these coordinates
+        int highestY = world.getHighestBlockYAt(x, z);
+
+        // Make sure we're not starting too low or too high
+        int startY = Math.min(world.getMaxHeight() - 10, Math.max(highestY, world.getMinHeight() + 10));
 
         // Check from startY down to bedrock
         for (int y = startY; y > world.getMinHeight() + 1; y--) {
@@ -416,8 +420,18 @@ public class LandClaimsCommand implements CommandExecutor {
                     loc.getBlock().getType().isAir() &&
                     above.getBlock().getType().isAir()) {
 
-                // Make sure this location is actually outside the claim
-                if (plugin.getClaimManager().getClaimAt(loc) == null) {
+                // Check if the player can see the sky from this position
+                boolean canSeeSky = true;
+                for (int skyY = y + 2; skyY < world.getMaxHeight(); skyY++) {
+                    Block block = world.getBlockAt(x, skyY, z);
+                    if (!block.getType().isAir() && !block.getType().isTransparent()) {
+                        canSeeSky = false;
+                        break;
+                    }
+                }
+
+                // Only return this location if it has sky access and is outside a claim
+                if (canSeeSky && plugin.getClaimManager().getClaimAt(loc) == null) {
                     return loc;
                 }
             }
