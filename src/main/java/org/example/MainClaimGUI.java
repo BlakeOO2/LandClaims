@@ -291,9 +291,15 @@ public class MainClaimGUI {
                     // Handle flight for trusted players in the claim before removing it
                     plugin.getClaimManager().handleFlightForUnclaimedClaim(claim, admin);
 
+                    // Calculate and refund blocks to the owner
+                    int refundAmount = claim.getSize();
+                    plugin.getBlockAccumulator().addBlocks(claim.getOwner(), refundAmount);
+
                     plugin.getClaimManager().removeClaim(claim);
                     plugin.getDataManager().deleteClaim(claim);
                     admin.sendMessage("§a[LandClaims] Claim deleted successfully!");
+                    admin.sendMessage("§a[LandClaims] " + refundAmount + " blocks have been refunded to " + 
+                            Bukkit.getOfflinePlayer(claim.getOwner()).getName());
                     admin.closeInventory();
                 } else {
                     admin.sendMessage("§c[LandClaims] Shift-click to confirm deletion!");
