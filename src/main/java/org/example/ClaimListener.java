@@ -1056,6 +1056,20 @@ public class ClaimListener implements Listener {
         }
     }
 
+    @EventHandler
+    public void onMinecartDamage(VehicleDamageEvent event) {
+        if (event.getVehicle() instanceof Minecart) {
+            Minecart minecart = (Minecart) event.getVehicle();
+            Entity player = event.getAttacker();
+            if(player instanceof Player ) {
+                Player p = (Player) player;
+                if(!allowedToBreakHere(p)){
+                    event.setCancelled(true);
+                }
+            }
+        }
+    }
+
 
 
 
