@@ -24,7 +24,18 @@ public class Claim {
         this.owner = owner;
         this.corner1 = corner1;
         this.corner2 = corner2;
-        this.world = corner1.getWorld().getName();
+
+        // Handle null world references safely
+        if (corner1.getWorld() != null) {
+            this.world = corner1.getWorld().getName();
+        } else if (corner2.getWorld() != null) {
+            this.world = corner2.getWorld().getName();
+        } else {
+            // If both worlds are null, use a fallback that won't crash
+            // This claim might be restored later when the world is loaded
+            this.world = "unknown_world";
+        }
+
         this.trustedPlayers = new HashMap<>();
         this.flags = new EnumMap<>(ClaimFlag.class);
         initializeDefaultFlags();
@@ -42,7 +53,8 @@ public class Claim {
     }
 
     public boolean contains(Location location) {
-        if (!location.getWorld().getName().equals(world)) return false;
+        // Safely handle null world references
+        if (location.getWorld() == null || !location.getWorld().getName().equals(world)) return false;
 
         int x = location.getBlockX();
         int z = location.getBlockZ();

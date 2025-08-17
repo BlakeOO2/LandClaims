@@ -62,6 +62,7 @@ public class Main extends JavaPlugin {
     private static final long FLIGHT_MESSAGE_COOLDOWN = 20000;
     private final Map<UUID, PlayerPreferences> playerPreferences = new HashMap<>();
     private final Map<UUID, Long> endermanBlockPickupTimes = new HashMap<>();
+    private FlightManager flightManager;
 
     @Override
     public void onEnable() {
@@ -97,6 +98,9 @@ public class Main extends JavaPlugin {
                 long oldThreshold = System.currentTimeMillis() - (30 * 60 * 1000);
                 endermanBlockPickupTimes.entrySet().removeIf(entry -> entry.getValue() < oldThreshold);
             }, 12000L, 12000L); // Run every 10 minutes (12000 ticks)
+
+            // Initialize FlightManager
+            this.flightManager = new FlightManager(this);
 
             // Register events with error handling
             try {
@@ -411,6 +415,10 @@ public class Main extends JavaPlugin {
                 getLogger().info("Saving block accumulator data...");
                 blockAccumulator.saveData();
             }
+            if (flightManager != null) {
+                getLogger().info("Shutting down flight manager...");
+                flightManager.shutdown();
+            }
             savePlayerPreferences();
 
 
@@ -631,6 +639,10 @@ public class Main extends JavaPlugin {
 
     public GlobalFlagsGUI getGlobalFlagsGui() {
         return globalFlagsGui;
+    }
+
+    public FlightManager getFlightManager() {
+        return flightManager;
     }
 
     public void debug(String message) {

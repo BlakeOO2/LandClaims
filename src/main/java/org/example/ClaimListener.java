@@ -2,6 +2,7 @@ package org.example;
 
 // ClaimListener.java
 
+import net.md_5.bungee.api.ChatMessageType;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -15,6 +16,7 @@ import org.bukkit.event.block.*;
 import org.bukkit.event.entity.*;
 import org.bukkit.event.player.*;
 import org.bukkit.block.Container;
+import org.bukkit.event.vehicle.VehicleDamageEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -34,6 +36,8 @@ import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.event.entity.PotionSplashEvent;
+import net.md_5.bungee.api.chat.TextComponent;
+
 
 import java.util.*;
 
@@ -155,7 +159,7 @@ public class ClaimListener implements Listener {
                     // This will be used to prevent fall damage for a short time
                     lastFlightMessage.put(player.getUniqueId(), System.currentTimeMillis());
 
-                    player.setAllowFlight(false);
+                    //player.setAllowFlight(false); //TODO lets see if this fixes the /lc flight for each time and doesnt allow flying outside of the claim
                     player.setFlying(false);
 
                     // Check cooldown before sending message
@@ -176,18 +180,19 @@ public class ClaimListener implements Listener {
             return;
         }
 
+
 // Check if player has notifications enabled
         PlayerPreferences prefs = plugin.getPlayerPreferences(player.getUniqueId());
         if (!prefs.isNotificationsEnabled()) {
             return;
         }
 
-        // Check if player has notifications enabled
+// Check if player has notifications permission
         if (!player.hasPermission("landclaims.notifications")) {
             return;
         }
 
-        // If entering a new claim
+// If entering a new claim
         if ((fromClaim == null && toClaim != null) ||
                 (fromClaim != null && toClaim != null && !fromClaim.equals(toClaim))) {
             String message;
@@ -199,9 +204,9 @@ public class ClaimListener implements Listener {
                                 "§6[LandClaims] You have entered %owner%'s claim")
                         .replace("%owner%", Bukkit.getOfflinePlayer(toClaim.getOwner()).getName());
             }
-            player.sendMessage(message);
+            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(message));
         }
-        // If leaving a claim
+// If leaving a claim
         else if (fromClaim != null && (toClaim == null || !fromClaim.equals(toClaim))) {
             String message;
             if (fromClaim.isAdminClaim()) {
@@ -212,8 +217,48 @@ public class ClaimListener implements Listener {
                                 "§6[LandClaims] You have left %owner%'s claim")
                         .replace("%owner%", Bukkit.getOfflinePlayer(fromClaim.getOwner()).getName());
             }
-            player.sendMessage(message);
+            player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(message));
         }
+
+//
+//// Check if player has notifications enabled
+//        PlayerPreferences prefs = plugin.getPlayerPreferences(player.getUniqueId());
+//        if (!prefs.isNotificationsEnabled()) {
+//            return;
+//        }
+//
+//        // Check if player has notifications enabled
+//        if (!player.hasPermission("landclaims.notifications")) {
+//            return;
+//        }
+//
+//        // If entering a new claim
+//        if ((fromClaim == null && toClaim != null) ||
+//                (fromClaim != null && toClaim != null && !fromClaim.equals(toClaim))) {
+//            String message;
+//            if (toClaim.isAdminClaim()) {
+//                message = plugin.getConfig().getString("messages.admin-claim-enter",
+//                        "§6[LandClaims] You have entered an admin protected area");
+//            } else {
+//                message = plugin.getConfig().getString("messages.claim-enter",
+//                                "§6[LandClaims] You have entered %owner%'s claim")
+//                        .replace("%owner%", Bukkit.getOfflinePlayer(toClaim.getOwner()).getName());
+//            }
+//            player.sendMessage(message);
+//        }
+//        // If leaving a claim
+//        else if (fromClaim != null && (toClaim == null || !fromClaim.equals(toClaim))) {
+//            String message;
+//            if (fromClaim.isAdminClaim()) {
+//                message = plugin.getConfig().getString("messages.admin-claim-exit",
+//                        "§6[LandClaims] You have left an admin protected area");
+//            } else {
+//                message = plugin.getConfig().getString("messages.claim-exit",
+//                                "§6[LandClaims] You have left %owner%'s claim")
+//                        .replace("%owner%", Bukkit.getOfflinePlayer(fromClaim.getOwner()).getName());
+//            }
+//            player.sendMessage(message);
+//        }
     }
 
     public boolean canFlyInClaim(Player player, Claim claim) {
@@ -302,6 +347,9 @@ public class ClaimListener implements Listener {
     public void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
         Block block = event.getBlock();
+
+
+
 
         // Special handling for crops and farmland
         if (isCrop(block.getType()) || block.getType() == Material.FARMLAND) {
@@ -847,6 +895,12 @@ public class ClaimListener implements Listener {
             return;
         }
 
+        // Check if entity is a hostile mob without a name tag
+        if (event.getEntity() instanceof Monster && !event.getEntity().isCustomNameVisible() && event.getEntity().getCustomName() == null) {
+            // Allow damaging hostile mobs without name tags
+            return;
+        }
+
         boolean isTrusted = claim.getTrustLevel(attacker.getUniqueId()) != null;
         boolean allowed = isTrusted ?
                 claim.getFlag(ClaimFlag.TRUSTED_INTERACTIVE) :
@@ -1056,15 +1110,30 @@ public class ClaimListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH)
     public void onMinecartDamage(VehicleDamageEvent event) {
         if (event.getVehicle() instanceof Minecart) {
-            Minecart minecart = (Minecart) event.getVehicle();
-            Entity player = event.getAttacker();
-            if(player instanceof Player ) {
-                Player p = (Player) player;
-                if(!allowedToBreakHere(p)){
+            Entity damager = event.getAttacker();
+            if (damager instanceof Player) {
+
+                Player player = (Player) damager;
+                Claim claim = plugin.getClaimManager().getClaimAt(player.getLocation());
+                plugin.getLogger().info("Player: " + player.getName());
+                plugin.getLogger().info("In Claim: " + (claim != null));
+                if (claim == null) {
+                    return;
+                } else if (claim != null) {
+                    plugin.getLogger().info("Claim Owner: " + claim.getOwner());
+                    plugin.getLogger().info("Player Trusted Level: " +
+                            claim.getTrustLevel(player.getUniqueId()));
+                }
+
+                // Check permission
+                boolean allowed = allowedToBreakHere(player);
+                plugin.getLogger().info("Allowed to Break: " + allowed);
+                if (!allowed) {
                     event.setCancelled(true);
+                    player.sendMessage("§c[LandClaims] You can't break a minecart here.");
                 }
             }
         }
@@ -1316,7 +1385,7 @@ public class ClaimListener implements Listener {
     // For monster spawning control
     @EventHandler(priority = EventPriority.HIGH)
     public void onCreatureSpawn(org.bukkit.event.entity.CreatureSpawnEvent event) {
-        if (event.getEntity() instanceof Monster || event.getEntity() instanceof Phantom) {
+        if (event.getEntity() instanceof Monster || event.getEntity() instanceof Phantom || event.getEntity() instanceof Slime) {
             if (!plugin.getProtectionManager().canMobsSpawn(event.getLocation())) {
                 event.setCancelled(true);
             }
@@ -1329,6 +1398,42 @@ public class ClaimListener implements Listener {
         if (!plugin.getProtectionManager().canLeavesDecay(event.getBlock().getLocation())) {
             event.setCancelled(true);
         }
+    }
+
+
+
+    private boolean allowedToBreakHere(Player player){
+        Claim claim = plugin.getClaimManager().getClaimAt(player.getLocation());
+        boolean allowed = false;
+
+        if (claim != null) {
+            // Owner always has permission
+            if (claim.getOwner().equals(player.getUniqueId())) {
+                return true; // Allow breaking
+            }
+
+            // Admin bypass
+            if (player.hasPermission("landclaims.admin") &&
+                    plugin.getClaimManager().isAdminBypassing(player.getUniqueId())) {
+                return true; // Allow breaking
+            }
+
+            // Check trust level first
+            TrustLevel trustLevel = claim.getTrustLevel(player.getUniqueId());
+
+            if (trustLevel != null && trustLevel.ordinal() >= TrustLevel.BUILD.ordinal()) {
+                // BUILD or higher trust level
+                allowed = claim.getFlag(ClaimFlag.TRUSTED_BUILD);
+            } else if (trustLevel != null) {
+                // Has trust but below BUILD level
+                allowed = claim.getFlag(ClaimFlag.TRUSTED_BUILD);
+            } else {
+                // Not trusted at all
+                allowed = claim.getFlag(ClaimFlag.UNTRUSTED_BUILD);
+            }
+
+        }
+        return allowed;
     }
 
 

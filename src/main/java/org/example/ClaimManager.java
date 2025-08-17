@@ -187,13 +187,28 @@ private void startCacheRefreshTask() {
 
         // Add claims to cache
         int count = 0;
+        int skippedCount = 0;
         for (Claim claim : claims) {
-            addClaimToCache(claim);
-            count++;
+            try {
+                // Skip claims with unknown world to prevent errors during lookups
+                if ("unknown_world".equals(claim.getWorld())) {
+                    plugin.getLogger().warning("Skipping claim with unknown world for owner " + 
+                        Bukkit.getOfflinePlayer(claim.getOwner()).getName() + " at " + 
+                        claim.getCorner1().getBlockX() + "," + claim.getCorner1().getBlockZ());
+                    skippedCount++;
+                    continue;
+                }
+
+                addClaimToCache(claim);
+                count++;
+            } catch (Exception e) {
+                plugin.getLogger().warning("Error adding claim to cache: " + e.getMessage());
+                skippedCount++;
+            }
         }
 
         loaded = true;
-        plugin.getLogger().info("Loaded " + count + " claims from database");
+        plugin.getLogger().info("Loaded " + count + " claims from database (Skipped " + skippedCount + " invalid claims)");
     }
 
 

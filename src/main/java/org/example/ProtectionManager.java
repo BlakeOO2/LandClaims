@@ -200,6 +200,9 @@ public class ProtectionManager {
         if (block.getType() == Material.ENDER_CHEST) {
             return true;
         }
+        if (block.getType() == Material.ENCHANTING_TABLE) {
+            return true;
+        }
         if (block.getType() == Material.CRAFTING_TABLE) {
             return true;
         }

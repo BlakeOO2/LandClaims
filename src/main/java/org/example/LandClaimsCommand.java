@@ -360,6 +360,7 @@ public class LandClaimsCommand implements CommandExecutor {
         // Player's current position
         int playerX = playerLoc.getBlockX();
         int playerZ = playerLoc.getBlockZ();
+        int playerY = playerLoc.getBlockY();
 
         // Determine which edge is closest
         int distToWest = playerX - minX;
@@ -370,70 +371,117 @@ public class LandClaimsCommand implements CommandExecutor {
         // Find the minimum distance
         int minDist = Math.min(Math.min(distToWest, distToEast), Math.min(distToNorth, distToSouth));
 
+        // The distance from the claim boundary to try to place the player
+        int offset = 5; // Increased from 3 to 5 for better safety
+
         // Try the closest edge first
         Location safeLoc = null;
         if (minDist == distToWest) {
-            safeLoc = findSafeY(world, minX - 3, playerZ); // 3 blocks outside west edge
+            safeLoc = findSafeTeleportLocation(world, minX - offset, playerZ, playerY);
         } else if (minDist == distToEast) {
-            safeLoc = findSafeY(world, maxX + 3, playerZ); // 3 blocks outside east edge
+            safeLoc = findSafeTeleportLocation(world, maxX + offset, playerZ, playerY);
         } else if (minDist == distToNorth) {
-            safeLoc = findSafeY(world, playerX, minZ - 3); // 3 blocks outside north edge
+            safeLoc = findSafeTeleportLocation(world, playerX, minZ - offset, playerY);
         } else {
-            safeLoc = findSafeY(world, playerX, maxZ + 3); // 3 blocks outside south edge
+            safeLoc = findSafeTeleportLocation(world, playerX, maxZ + offset, playerY);
         }
 
         // If we couldn't find a safe location at the closest edge, try other edges
         if (safeLoc == null) {
-            if (minDist != distToWest) safeLoc = findSafeY(world, minX - 3, playerZ);
-            if (safeLoc == null && minDist != distToEast) safeLoc = findSafeY(world, maxX + 3, playerZ);
-            if (safeLoc == null && minDist != distToNorth) safeLoc = findSafeY(world, playerX, minZ - 3);
-            if (safeLoc == null && minDist != distToSouth) safeLoc = findSafeY(world, playerX, maxZ + 3);
+            if (minDist != distToWest) safeLoc = findSafeTeleportLocation(world, minX - offset, playerZ, playerY);
+            if (safeLoc == null && minDist != distToEast) safeLoc = findSafeTeleportLocation(world, maxX + offset, playerZ, playerY);
+            if (safeLoc == null && minDist != distToNorth) safeLoc = findSafeTeleportLocation(world, playerX, minZ - offset, playerY);
+            if (safeLoc == null && minDist != distToSouth) safeLoc = findSafeTeleportLocation(world, playerX, maxZ + offset, playerY);
         }
 
         // If still no safe location, try corners
         if (safeLoc == null) {
-            safeLoc = findSafeY(world, minX - 3, minZ - 3); // Northwest corner
-            if (safeLoc == null) safeLoc = findSafeY(world, maxX + 3, minZ - 3); // Northeast corner
-            if (safeLoc == null) safeLoc = findSafeY(world, minX - 3, maxZ + 3); // Southwest corner
-            if (safeLoc == null) safeLoc = findSafeY(world, maxX + 3, maxZ + 3); // Southeast corner
+            safeLoc = findSafeTeleportLocation(world, minX - offset, minZ - offset, playerY); // Northwest corner
+            if (safeLoc == null) safeLoc = findSafeTeleportLocation(world, maxX + offset, minZ - offset, playerY); // Northeast corner
+            if (safeLoc == null) safeLoc = findSafeTeleportLocation(world, minX - offset, maxZ + offset, playerY); // Southwest corner
+            if (safeLoc == null) safeLoc = findSafeTeleportLocation(world, maxX + offset, maxZ + offset, playerY); // Southeast corner
+        }
+
+        // If we still haven't found a safe location, try a more exhaustive search
+        if (safeLoc == null) {
+            // Try a wider radius around the claim
+            for (int radius = offset + 5; radius <= 20; radius += 5) {
+                // Try positions on all sides with the increased radius
+                safeLoc = findSafeTeleportLocation(world, playerX, minZ - radius, playerY); // North
+                if (safeLoc != null) break;
+
+                safeLoc = findSafeTeleportLocation(world, maxX + radius, playerZ, playerY); // East
+                if (safeLoc != null) break;
+
+                safeLoc = findSafeTeleportLocation(world, playerX, maxZ + radius, playerY); // South
+                if (safeLoc != null) break;
+
+                safeLoc = findSafeTeleportLocation(world, minX - radius, playerZ, playerY); // West
+                if (safeLoc != null) break;
+            }
         }
 
         return safeLoc;
     }
 
     private Location findSafeY(World world, int x, int z) {
-        // Start from the highest possible position at these coordinates
+        // This is the old method - we'll keep it for backward compatibility
+        // but will primarily use findSafeTeleportLocation instead
+        return findSafeTeleportLocation(world, x, z, -1);
+    }
+
+    private Location findSafeTeleportLocation(World world, int x, int z, int preferredY) {
+        // Try to find a safe location at or near the highest block
         int highestY = world.getHighestBlockYAt(x, z);
 
-        // Make sure we're not starting too low or too high
-        int startY = Math.min(world.getMaxHeight() - 10, Math.max(highestY, world.getMinHeight() + 10));
+        // If the highest block is too low (like in a cave system), we'll try from a higher position
+        if (highestY < 62 && world.getEnvironment() == World.Environment.NORMAL) {
+            // In overworld, try to start from y=70 if the highest block seems to be underground
+            highestY = Math.max(highestY, 70); 
+        }
 
-        // Check from startY down to bedrock
+        // Start checking from player's Y level if provided and reasonable
+        int startY = (preferredY > 0) ? preferredY : highestY + 1;
+
+        // Limit to reasonable ranges
+        startY = Math.min(world.getMaxHeight() - 10, Math.max(startY, world.getMinHeight() + 10));
+
+        // Check down from startY to find a safe place to stand
         for (int y = startY; y > world.getMinHeight() + 1; y--) {
             Location loc = new Location(world, x + 0.5, y, z + 0.5);
             Location below = loc.clone().subtract(0, 1, 0);
             Location above = loc.clone().add(0, 1, 0);
+            Location twoAbove = loc.clone().add(0, 2, 0);
 
-            // Check if we have a solid block below and air above
-            if (below.getBlock().getType().isSolid() &&
+            // Check if we have solid ground to stand on
+            if (below.getBlock().getType().isSolid() && 
                     !isHazardous(below.getBlock().getType()) &&
                     loc.getBlock().getType().isAir() &&
                     above.getBlock().getType().isAir()) {
 
-                // Check if the player can see the sky from this position
-                boolean canSeeSky = true;
-                for (int skyY = y + 2; skyY < world.getMaxHeight(); skyY++) {
-                    Block block = world.getBlockAt(x, skyY, z);
-                    if (!block.getType().isAir() && !block.getType().isTransparent()) {
-                        canSeeSky = false;
-                        break;
+                // Check if this is outside a claim
+                if (plugin.getClaimManager().getClaimAt(loc) == null) {
+                    // If we're at y < 60 in the overworld, it's likely underground
+                    // We'll accept it only if we can't find anything better
+                    if (y >= 60 || world.getEnvironment() != World.Environment.NORMAL || 
+                            world.getBlockAt(x, y+1, z).getLightFromSky() > 0) {
+                        return loc; 
                     }
                 }
+            }
+        }
 
-                // Only return this location if it has sky access and is outside a claim
-                if (canSeeSky && plugin.getClaimManager().getClaimAt(loc) == null) {
-                    return loc;
-                }
+        // If we can't find a perfect spot, try with less strict criteria
+        for (int y = startY; y > world.getMinHeight() + 1; y--) {
+            Location loc = new Location(world, x + 0.5, y, z + 0.5);
+            Location below = loc.clone().subtract(0, 1, 0);
+
+            // Just make sure there's something solid below and air at player position
+            if (below.getBlock().getType().isSolid() && 
+                    !isHazardous(below.getBlock().getType()) &&
+                    loc.getBlock().getType().isAir() &&
+                    plugin.getClaimManager().getClaimAt(loc) == null) {
+                return loc;
             }
         }
 
