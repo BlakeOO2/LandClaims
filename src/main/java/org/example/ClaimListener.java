@@ -1118,19 +1118,20 @@ public class ClaimListener implements Listener {
 
                 Player player = (Player) damager;
                 Claim claim = plugin.getClaimManager().getClaimAt(player.getLocation());
-                plugin.getLogger().info("Player: " + player.getName());
-                plugin.getLogger().info("In Claim: " + (claim != null));
+                plugin.debug("Player: " + player.getName());
+                plugin.debug("In Claim: " + claim);
                 if (claim == null) {
+                    plugin.debug("Player in unclaimed area");
                     return;
                 } else if (claim != null) {
-                    plugin.getLogger().info("Claim Owner: " + claim.getOwner());
-                    plugin.getLogger().info("Player Trusted Level: " +
+                    plugin.debug("Claim Owner: " + claim.getOwner());
+                    plugin.debug("Player Trusted Level: " +
                             claim.getTrustLevel(player.getUniqueId()));
                 }
 
                 // Check permission
                 boolean allowed = allowedToBreakHere(player);
-                plugin.getLogger().info("Allowed to Break: " + allowed);
+                plugin.debug("Allowed to Break: " + allowed);
                 if (!allowed) {
                     event.setCancelled(true);
                     player.sendMessage("§c[LandClaims] You can't break a minecart here.");
